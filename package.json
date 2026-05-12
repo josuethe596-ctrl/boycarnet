@@ -1,0 +1,17 @@
+{
+  "name": "usmc-carnets-bot",
+  "version": "1.0.0",
+  "description": "Bot de carnets militares USMC con sistema de matriculas",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "@napi-rs/canvas": "^0.1.44"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
