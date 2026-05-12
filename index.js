@@ -200,24 +200,13 @@ const commands = [
           { name: 'Staff Sergeant (SSGT)', value: 'SSGT' },
           { name: 'Gunnery Sergeant (GYSGT)', value: 'GYSGT' },
           { name: 'Master Sergeant (MSGT)', value: 'MSGT' },
-          { name: 'First Sergeant (1SGT)', value: '1SGT' },
-          { name: 'Master Gunnery Sergeant (MGYSGT)', value: 'MGYSGT' },
-          { name: 'Sergeant Major (SGTMAJ)', value: 'SGTMAJ' },
           { name: 'Warrant Officer 1 (WO-1)', value: 'WO-1' },
           { name: 'Chief Warrant Officer 2 (CWO-2)', value: 'CWO-2' },
-          { name: 'Chief Warrant Officer 3 (CWO-3)', value: 'CWO-3' },
-          { name: 'Chief Warrant Officer 4 (CWO-4)', value: 'CWO-4' },
-          { name: 'Chief Warrant Officer 5 (CWO-5)', value: 'CWO-5' },
           { name: 'Second Lieutenant (2LT)', value: '2LT' },
           { name: 'First Lieutenant (1LT)', value: '1LT' },
           { name: 'Captain (CPT)', value: 'CPT' },
           { name: 'Major (MAJ)', value: 'MAJ' },
           { name: 'Lieutenant Colonel (LTCOL)', value: 'LTCOL' },
-          { name: 'Colonel (COL)', value: 'COL' },
-          { name: 'Brigadier General (BGEN)', value: 'BGEN' },
-          { name: 'Major General (MAJGEN)', value: 'MAJGEN' },
-          { name: 'Lieutenant General (LTGEN)', value: 'LTGEN' },
-          { name: 'General (GEN)', value: 'GEN' }
         )
     )
     .addStringOption(o => 
