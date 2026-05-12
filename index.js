@@ -25,14 +25,17 @@ const client = new Client({
 // ===== CONFIG =====
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = '1500333360344469524';
-const GUILD_ID = '1123790874741047356';
+
+// ===== GUILDS =====
+const GUILD_PRINCIPAL = '1123790874741047356';
+const GUILD_STAFF = '1464318287683780836';
 
 // ===== ROLES =====
 const ROL_USUARIO = '1249089172308885576';
 const ROLES_ADMIN = ['1249089576270696508', '1249089640632422470'];
 
-// ===== CANAL LOGS =====
-const CANAL_LOGS = '1500352253293498561';
+// ===== CANAL LOGS (hilo de foro en servidor staff) =====
+const CANAL_LOGS = '1469913999192752178';
 
 // ===== IMAGENES DE SOLDADOS =====
 const FOTOS_SOLDADO = {
@@ -127,7 +130,6 @@ function formatearMatricula(numero) {
 }
 
 function obtenerSiguienteMatricula(matriculasData) {
-  // Buscar huecos en los números activos
   const numerosActivos = Object.values(matriculasData.activos).map(m => m.numero).sort((a, b) => a - b);
   let siguiente = 1;
   for (const num of numerosActivos) {
@@ -137,9 +139,30 @@ function obtenerSiguienteMatricula(matriculasData) {
   return siguiente;
 }
 
+async function obtenerCanalHilo(channelId) {
+  try {
+    for (const guild of client.guilds.cache.values()) {
+      const canal = guild.channels.cache.get(channelId);
+      if (canal) {
+        if (canal.isThread && canal.isThread() && canal.archived) {
+          try { await canal.setArchived(false); } catch(e) {}
+        }
+        return canal;
+      }
+    }
+    let canal = await client.channels.fetch(channelId, { force: false });
+    if (canal && canal.isThread && canal.isThread() && canal.archived) {
+      try { await canal.setArchived(false); } catch(e) {}
+    }
+    return canal;
+  } catch (err) {
+    console.error('Error al obtener canal/hilo ' + channelId + ':', err.message);
+    return null;
+  }
+}
+
 // ===== COMANDOS =====
 const commands = [
-  // /carnet
   new SlashCommandBuilder()
     .setName('carnet')
     .setDescription('Generar tu carnet de identificacion militar')
@@ -258,12 +281,10 @@ const commands = [
         .setRequired(true)
     ),
 
-  // /mycarnet
   new SlashCommandBuilder()
     .setName('mycarnet')
     .setDescription('Ver tu carnet de identificacion'),
 
-  // /admin
   new SlashCommandBuilder()
     .setName('admin')
     .setDescription('Panel de administracion de carnets')
@@ -271,7 +292,6 @@ const commands = [
     .addSubcommand(o => o.setName('eliminar').setDescription('Eliminar carnet de un usuario').addUserOption(u => u.setName('usuario').setDescription('Usuario').setRequired(true)))
     .addSubcommand(o => o.setName('lista').setDescription('Lista de todos los carnets')),
 
-  // /matriculas
   new SlashCommandBuilder()
     .setName('matriculas')
     .setDescription('Sistema de matriculas (callsigns)')
@@ -288,8 +308,10 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 client.once('ready', async () => {
   console.log('Bot USMC Carnets iniciado correctamente');
   try {
-    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
-    console.log('Comandos registrados');
+    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_PRINCIPAL), { body: commands });
+    console.log('Comandos registrados en servidor PRINCIPAL');
+    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_STAFF), { body: commands });
+    console.log('Comandos registrados en servidor STAFF');
   } catch (err) {
     console.error('ERROR REGISTRANDO COMANDOS:', err);
   }
@@ -318,38 +340,31 @@ async function generarCarnetCanvas(datos) {
   const canvas = createCanvas(800, 1200);
   const ctx = canvas.getContext('2d');
 
-  // FONDO
   ctx.fillStyle = '#0a0a0a';
   ctx.fillRect(0, 0, 800, 1200);
 
-  // BARRAS ROJAS
   ctx.fillStyle = '#8B0000';
   ctx.fillRect(0, 0, 800, 40);
   ctx.fillRect(0, 1160, 800, 40);
 
-  // ESQUINAS
   ctx.fillStyle = '#8B0000';
   [[40, 40, 60], [760, 40, 60], [40, 1160, 60], [760, 1160, 60]].forEach(([x, y, r]) => {
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
   });
 
-  // MARCO
   ctx.strokeStyle = '#8B0000'; ctx.lineWidth = 4;
   ctx.strokeRect(30, 30, 740, 1140);
 
-  // ENCABEZADO
   ctx.fillStyle = '#ffffff'; ctx.font = 'bold 22px Arial'; ctx.textAlign = 'center';
   ctx.fillText('UNITED STATES MARINE CORPS', 400, 75);
   ctx.fillStyle = '#c0c0c0'; ctx.font = '16px Arial';
   ctx.fillText('OFFICIAL IDENTIFICATION CARD', 400, 95);
 
-  // MATRICULA
   if (matricula) {
     ctx.fillStyle = '#D4AF37'; ctx.font = 'bold 18px Arial';
     ctx.fillText('CALLSIGN: ' + matricula, 400, 115);
   }
 
-  // FOTO
   try {
     const fotoImage = await loadImage(fotoURL);
     const fotoX = 60, fotoY = 140, fotoW = 280, fotoH = 350;
@@ -365,7 +380,6 @@ async function generarCarnetCanvas(datos) {
     ctx.fillText('IMAGEN NO DISPONIBLE', 200, 315);
   }
 
-  // NOMBRE
   ctx.fillStyle = '#ffffff'; ctx.font = 'bold 26px Arial'; ctx.textAlign = 'center';
   const nombreUpper = nombreCompleto.toUpperCase();
   const partes = nombreUpper.split(' ');
@@ -377,7 +391,6 @@ async function generarCarnetCanvas(datos) {
     ctx.fillText(nombreUpper, 200, 535);
   }
 
-  // DATOS DERECHA
   const xDer = 400; let yPos = 160;
   function dibujarCampo(titulo, valor, color) {
     if (!color) color = '#FFD700';
@@ -397,12 +410,10 @@ async function generarCarnetCanvas(datos) {
   dibujarCampo('EXPIRATION DATE', fechaExpiracion, '#ff6666');
   dibujarCampo('UNIT / REGIMENT', regimientoData.abreviatura, '#ffffff');
 
-  // SEMPER FIDELIS
   ctx.save(); ctx.translate(22, 720); ctx.rotate(-Math.PI / 2);
   ctx.fillStyle = '#8B0000'; ctx.font = 'bold 36px Arial'; ctx.textAlign = 'center';
   ctx.fillText('SEMPER FIDELIS', 0, 0); ctx.restore();
 
-  // ESCUDO
   ctx.beginPath(); ctx.arc(400, 760, 100, 0, Math.PI * 2);
   ctx.strokeStyle = '#D4AF37'; ctx.lineWidth = 6; ctx.stroke();
   ctx.beginPath(); ctx.arc(400, 760, 88, 0, Math.PI * 2);
@@ -412,7 +423,6 @@ async function generarCarnetCanvas(datos) {
   ctx.font = 'bold 22px Arial'; ctx.fillText('MARINE CORPS', 400, 765);
   ctx.font = 'bold 12px Arial'; ctx.fillText('SINCE 1775', 400, 790);
 
-  // LOGO REGIMIENTO
   try {
     const logoImage = await loadImage(regimientoData.logo);
     const logoX = 580, logoY = 680, logoSize = 140;
@@ -428,7 +438,6 @@ async function generarCarnetCanvas(datos) {
     ctx.fillText(regimientoData.abreviatura, 650, 750);
   }
 
-  // BANDERA USA
   ctx.fillStyle = '#3C3B6E'; ctx.fillRect(60, 1040, 80, 55);
   ctx.fillStyle = '#B22234';
   for (let i = 0; i < 7; i += 2) ctx.fillRect(140, 1040 + (i * 8), 40, 8);
@@ -440,14 +449,12 @@ async function generarCarnetCanvas(datos) {
     }
   }
 
-  // TEXTO MARINES
   ctx.fillStyle = '#ffffff'; ctx.font = 'bold 44px Arial'; ctx.textAlign = 'left';
   ctx.fillText('MARINES', 155, 1075);
   ctx.fillStyle = '#aaaaaa'; ctx.font = '13px Arial';
   ctx.fillText('THE OFFICIAL WEBSITE OF THE UNITED', 155, 1095);
   ctx.fillText('STATES MARINE CORPS', 155, 1110);
 
-  // CODIGO DE BARRAS
   ctx.fillStyle = '#ffffff'; const barX = 620;
   for (let i = 0; i < 35; i++) {
     const ancho = (i % 3 === 0) ? 4 : (i % 2 === 0 ? 3 : 2);
@@ -457,14 +464,12 @@ async function generarCarnetCanvas(datos) {
   ctx.font = 'bold 14px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#aaaaaa';
   ctx.fillText('ID: USMC-' + userId.slice(-8).toUpperCase(), barX + 80, 1055);
 
-  // CHIP
   ctx.fillStyle = '#D4AF37'; ctx.beginPath(); ctx.roundRect(680, 1040, 90, 55, 10); ctx.fill();
   ctx.fillStyle = '#8B6914'; ctx.beginPath(); ctx.roundRect(685, 1045, 80, 45, 8); ctx.fill();
   ctx.strokeStyle = '#D4AF37'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(695, 1055); ctx.lineTo(755, 1055);
   ctx.moveTo(695, 1068); ctx.lineTo(755, 1068); ctx.stroke();
 
-  // FOOTER
   ctx.fillStyle = '#666666'; ctx.font = '10px Arial'; ctx.textAlign = 'right';
   ctx.fillText('CARD ID: ' + userId + ' | USMC OFFICIAL', 780, 1145);
 
@@ -487,7 +492,6 @@ client.on('interactionCreate', async interaction => {
         return safeReply(interaction, { content: 'No tienes permiso para usar este comando.', ephemeral: true });
       }
 
-      // Verificar si ya tiene carnet
       if (data[userId]) {
         return safeReply(interaction, { content: 'Ya tienes un carnet generado. Usa /mycarnet para verlo.', ephemeral: true });
       }
@@ -503,7 +507,6 @@ client.on('interactionCreate', async interaction => {
       const fechaIngreso = interaction.options.getString('fecha_ingreso');
       const fechaExpiracion = interaction.options.getString('fecha_expiracion');
 
-      // Asignar matricula automaticamente
       let matricula = null;
       if (!matriculasData.activos[userId]) {
         const siguienteNumero = obtenerSiguienteMatricula(matriculasData);
@@ -521,7 +524,6 @@ client.on('interactionCreate', async interaction => {
         matricula = matriculasData.activos[userId].matricula;
       }
 
-      // Generar canvas
       const buffer = await generarCarnetCanvas({
         nombreCompleto, fotoKey, rango, payGrade, especialidad,
         regimientoKey, fechaIngreso, fechaExpiracion, matricula, userId
@@ -529,7 +531,6 @@ client.on('interactionCreate', async interaction => {
 
       const attachment = new AttachmentBuilder(buffer, { name: 'carnet_' + userId + '.png' });
 
-      // Guardar datos
       data[userId] = {
         nombre: nombreCompleto,
         foto: fotoKey,
@@ -616,7 +617,6 @@ client.on('interactionCreate', async interaction => {
 
       const subcommand = interaction.options.getSubcommand();
 
-      // /admin ver
       if (subcommand === 'ver') {
         await interaction.deferReply({ ephemeral: true });
         const usuario = interaction.options.getUser('usuario');
@@ -646,7 +646,6 @@ client.on('interactionCreate', async interaction => {
         return interaction.editReply({ embeds: [embed] });
       }
 
-      // /admin eliminar
       if (subcommand === 'eliminar') {
         await interaction.deferReply({ ephemeral: true });
         const usuario = interaction.options.getUser('usuario');
@@ -658,7 +657,6 @@ client.on('interactionCreate', async interaction => {
         delete data[usuario.id];
         saveData(data);
 
-        // Tambien dar de baja la matricula
         if (matriculasData.activos[usuario.id]) {
           const matriculaInfo = matriculasData.activos[usuario.id];
           matriculasData.bajas[usuario.id] = {
@@ -673,7 +671,6 @@ client.on('interactionCreate', async interaction => {
         return interaction.editReply({ content: 'Carnet de <@' + usuario.id + '> eliminado correctamente. Matricula dada de baja.' });
       }
 
-      // /admin lista
       if (subcommand === 'lista') {
         await interaction.deferReply({ ephemeral: true });
 
@@ -701,7 +698,6 @@ client.on('interactionCreate', async interaction => {
     if (interaction.commandName === 'matriculas') {
       const subcommand = interaction.options.getSubcommand();
 
-      // /matriculas lista
       if (subcommand === 'lista') {
         await interaction.deferReply();
 
@@ -710,7 +706,6 @@ client.on('interactionCreate', async interaction => {
           return interaction.editReply({ content: 'No hay matriculas activas.' });
         }
 
-        // Separar cupula (UH-01 a UH-09) y soldados (UH-10+)
         const cupula = [];
         const soldados = [];
 
@@ -733,7 +728,6 @@ client.on('interactionCreate', async interaction => {
         return interaction.editReply({ embeds: [embed] });
       }
 
-      // /matriculas asignar (solo admin)
       if (subcommand === 'asignar') {
         if (!tieneAlgunRol(interaction.member, ROLES_ADMIN)) {
           return safeReply(interaction, { content: 'Acceso denegado.', ephemeral: true });
@@ -760,9 +754,8 @@ client.on('interactionCreate', async interaction => {
         matriculasData.ultimoNumero = Math.max(matriculasData.ultimoNumero, siguienteNumero);
         saveMatriculas(matriculasData);
 
-        // Log
-        const canalLogs = interaction.guild?.channels.cache.get(CANAL_LOGS);
-        if (canalLogs && canalLogs.isTextBased()) {
+        const hiloLogs = await obtenerCanalHilo(CANAL_LOGS);
+        if (hiloLogs && hiloLogs.isTextBased()) {
           const logEmbed = new EmbedBuilder()
             .setColor(0x8B0000)
             .setTitle('NUEVA MATRICULA ASIGNADA')
@@ -773,13 +766,12 @@ client.on('interactionCreate', async interaction => {
               'Asignado por: <@' + interaction.user.id + '>'
             )
             .setTimestamp();
-          canalLogs.send({ embeds: [logEmbed] }).catch(() => {});
+          hiloLogs.send({ embeds: [logEmbed] }).catch(() => {});
         }
 
         return interaction.editReply({ content: 'Matricula **' + matricula + '** asignada a <@' + usuario.id + '> (' + nombre + ').' });
       }
 
-      // /matriculas baja (solo admin)
       if (subcommand === 'baja') {
         if (!tieneAlgunRol(interaction.member, ROLES_ADMIN)) {
           return safeReply(interaction, { content: 'Acceso denegado.', ephemeral: true });
@@ -788,7 +780,6 @@ client.on('interactionCreate', async interaction => {
         await interaction.deferReply({ ephemeral: true });
         const matriculaInput = interaction.options.getString('matricula').toUpperCase();
 
-        // Buscar por matricula
         const entrada = Object.entries(matriculasData.activos).find(([uid, info]) => info.matricula === matriculaInput);
 
         if (!entrada) {
@@ -804,9 +795,8 @@ client.on('interactionCreate', async interaction => {
         delete matriculasData.activos[uid];
         saveMatriculas(matriculasData);
 
-        // Log
-        const canalLogs = interaction.guild?.channels.cache.get(CANAL_LOGS);
-        if (canalLogs && canalLogs.isTextBased()) {
+        const hiloLogs = await obtenerCanalHilo(CANAL_LOGS);
+        if (hiloLogs && hiloLogs.isTextBased()) {
           const logEmbed = new EmbedBuilder()
             .setColor(0x8B0000)
             .setTitle('BAJA DE MATRICULA')
@@ -817,13 +807,12 @@ client.on('interactionCreate', async interaction => {
               'Dado de baja por: <@' + interaction.user.id + '>'
             )
             .setTimestamp();
-          canalLogs.send({ embeds: [logEmbed] }).catch(() => {});
+          hiloLogs.send({ embeds: [logEmbed] }).catch(() => {});
         }
 
         return interaction.editReply({ content: 'Matricula **' + matriculaInput + '** (' + info.nombre + ') dada de baja correctamente.' });
       }
 
-      // /matriculas reactivar (solo admin)
       if (subcommand === 'reactivar') {
         if (!tieneAlgunRol(interaction.member, ROLES_ADMIN)) {
           return safeReply(interaction, { content: 'Acceso denegado.', ephemeral: true });
@@ -832,7 +821,6 @@ client.on('interactionCreate', async interaction => {
         await interaction.deferReply({ ephemeral: true });
         const matriculaInput = interaction.options.getString('matricula').toUpperCase();
 
-        // Buscar en bajas
         const entrada = Object.entries(matriculasData.bajas).find(([uid, info]) => info.matricula === matriculaInput);
 
         if (!entrada) {
@@ -841,10 +829,8 @@ client.on('interactionCreate', async interaction => {
 
         const [uid, info] = entrada;
 
-        // Verificar si el numero ya esta ocupado
         const numeroOcupado = Object.values(matriculasData.activos).some(m => m.numero === info.numero);
         if (numeroOcupado) {
-          // Asignar nuevo numero
           const nuevoNumero = obtenerSiguienteMatricula(matriculasData);
           const nuevaMatricula = formatearMatricula(nuevoNumero);
           info.numero = nuevoNumero;
@@ -863,9 +849,8 @@ client.on('interactionCreate', async interaction => {
           ? 'Miembro **' + info.nombre + '** reactivado. Nueva matricula: **' + info.matricula + '** (la anterior estaba ocupada).'
           : 'Miembro **' + info.nombre + '** reactivado con matricula **' + info.matricula + '**.';
 
-        // Log
-        const canalLogs = interaction.guild?.channels.cache.get(CANAL_LOGS);
-        if (canalLogs && canalLogs.isTextBased()) {
+        const hiloLogs = await obtenerCanalHilo(CANAL_LOGS);
+        if (hiloLogs && hiloLogs.isTextBased()) {
           const logEmbed = new EmbedBuilder()
             .setColor(0x8B0000)
             .setTitle('REACTIVACION DE MATRICULA')
@@ -876,13 +861,12 @@ client.on('interactionCreate', async interaction => {
               'Reactivado por: <@' + interaction.user.id + '>'
             )
             .setTimestamp();
-          canalLogs.send({ embeds: [logEmbed] }).catch(() => {});
+          hiloLogs.send({ embeds: [logEmbed] }).catch(() => {});
         }
 
         return interaction.editReply({ content: msg });
       }
 
-      // /matriculas historial
       if (subcommand === 'historial') {
         if (!tieneAlgunRol(interaction.member, ROLES_ADMIN)) {
           return safeReply(interaction, { content: 'Acceso denegado.', ephemeral: true });
