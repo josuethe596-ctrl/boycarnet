@@ -24,7 +24,7 @@ const client = new Client({
 
 // ===== CONFIG =====
 const TOKEN = process.env.TOKEN;
-const CLIENT_ID = '1503600299284107334';
+const CLIENT_ID = '1503744068134637750';
 
 // ===== GUILDS =====
 const GUILD_PRINCIPAL = '1499948089287381127';
