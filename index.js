@@ -27,7 +27,7 @@ const TOKEN = process.env.TOKEN;
 const CLIENT_ID = '1500333360344469524';
 
 // ===== GUILDS =====
-const GUILD_PRINCIPAL = '1123790874741047356';
+const GUILD_PRINCIPAL = '1499948089287381127';
 const GUILD_STAFF = '1464318287683780836';
 
 // ===== ROLES =====
@@ -306,14 +306,29 @@ const commands = [
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 client.once('ready', async () => {
+  console.log('========================================');
   console.log('Bot USMC Carnets iniciado correctamente');
+  console.log('Bot tag:', client.user.tag);
+  console.log('Bot ID:', client.user.id);
+  console.log('Servidores:', client.guilds.cache.map(g => g.name + ' (' + g.id + ')').join(', '));
+  console.log('========================================');
+
   try {
-    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_PRINCIPAL), { body: commands });
-    console.log('Comandos registrados en servidor PRINCIPAL');
-    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_STAFF), { body: commands });
-    console.log('Comandos registrados en servidor STAFF');
+    console.log('Registrando comandos en PRINCIPAL (' + GUILD_PRINCIPAL + ')...');
+    const resultPrincipal = await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_PRINCIPAL), { body: commands });
+    console.log('Comandos registrados en PRINCIPAL:', resultPrincipal.length);
+
+    console.log('Registrando comandos en STAFF (' + GUILD_STAFF + ')...');
+    const resultStaff = await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_STAFF), { body: commands });
+    console.log('Comandos registrados en STAFF:', resultStaff.length);
+
+    console.log('========================================');
+    console.log('TOTAL COMANDOS REGISTRADOS:', commands.length);
+    console.log('========================================');
   } catch (err) {
-    console.error('ERROR REGISTRANDO COMANDOS:', err);
+    console.error('ERROR REGISTRANDO COMANDOS:');
+    console.error(err.message);
+    console.error(err.stack);
   }
 });
 
