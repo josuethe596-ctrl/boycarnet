@@ -3,12 +3,13 @@ const {
   GatewayIntentBits, 
   REST, 
   Routes, 
-  SlashCommandBuilder, 
-  AttachmentBuilder,
+  SlashCommandBuilder,
   MessageFlags
 } = require('discord.js');
+
 const fs = require('fs');
 
+// ===== CLIENT =====
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -20,18 +21,29 @@ const client = new Client({
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = '1503744068134637750';
 
-// ===== ROLES =====
-const ROLES_ADMIN = ['1249089576270696508', '1249089640632422470'];
-
-// ===== CANAL DONDE SE SUBEN LOS CARNETS =====
+// ===== CANAL DE CARNETS =====
 const CANAL_CARNETS = '1444812609441501275';
 
-// ===== ARCHIVO DE DATOS =====
+// ===== ARCHIVO =====
 const DATA_FILE = './data.json';
 
+// ===== ROLES / SECCIONES =====
+const ROLES_CARNETS = {
+  '1249081905631203419': 'Commissioned Officers',
+  '1465107741550051369': 'Warrant Officers',
+  '1249072506850246819': 'Staff Non-Commissioned Officers',
+  '1249076967156875265': 'Non-Commissioned Officers',
+  '1249080467198836787': 'Junior Enlisted'
+};
+
+// ===== DATA =====
 function loadData() {
-  try { return JSON.parse(fs.readFileSync(DATA_FILE)); } 
-  catch { fs.writeFileSync(DATA_FILE, '{}'); return {}; }
+  try {
+    return JSON.parse(fs.readFileSync(DATA_FILE));
+  } catch {
+    fs.writeFileSync(DATA_FILE, '{}');
+    return {};
+  }
 }
 
 function saveData(data) {
@@ -41,10 +53,13 @@ function saveData(data) {
 // ===== SAFE REPLY =====
 async function safeReply(interaction, options) {
   try {
-    if (interaction.replied || interaction.deferred) return await interaction.followUp(options);
-    else return await interaction.reply(options);
+    if (interaction.replied || interaction.deferred) {
+      return await interaction.followUp(options);
+    } else {
+      return await interaction.reply(options);
+    }
   } catch (err) {
-    console.error('Error en safeReply:', err.message);
+    console.error(err);
   }
 }
 
@@ -52,43 +67,76 @@ async function safeReply(interaction, options) {
 const commands = [
   new SlashCommandBuilder()
     .setName('carnet')
-    .setDescription('Sube tu carnet y asigna su sección')
+    .setDescription('Subir carnet militar')
     .addAttachmentOption(option =>
-      option.setName('imagen')
-        .setDescription('Selecciona la imagen de tu carnet')
+      option
+        .setName('imagen')
+        .setDescription('Imagen del carnet')
         .setRequired(true)
     )
     .addStringOption(option =>
-      option.setName('rol')
-        .setDescription('Selecciona la sección/rol del carnet')
+      option
+        .setName('categoria')
+        .setDescription('Selecciona la categoria del carnet')
         .setRequired(true)
         .addChoices(
-          { name: 'Commised Officer', value: '1249081905631203419' },
-          { name: 'Staff Commised Officer', value: '1465107741550051369' },
-          { name: 'Junior Enlisted', value: '1249072506850246819' },
-          { name: 'Enlisted', value: '1249076967156875265' },
-          { name: 'Otros', value: '1249080467198836787' }
+          {
+            name: 'Commissioned Officers',
+            value: '1249081905631203419'
+          },
+          {
+            name: 'Warrant Officers',
+            value: '1465107741550051369'
+          },
+          {
+            name: 'Staff Non-Commissioned Officers',
+            value: '1249072506850246819'
+          },
+          {
+            name: 'Non-Commissioned Officers',
+            value: '1249076967156875265'
+          },
+          {
+            name: 'Junior Enlisted',
+            value: '1249080467198836787'
+          }
         )
     ),
+
   new SlashCommandBuilder()
     .setName('mycarnet')
-    .setDescription('Ver tus datos de carnet (opcional)'),
-  new SlashCommandBuilder()
-    .setName('admin')
-    .setDescription('Panel de administracion')
-].map(c => c.toJSON());
+    .setDescription('Ver informacion de tu carnet')
+].map(cmd => cmd.toJSON());
 
 // ===== REGISTRAR COMANDOS =====
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 client.once('ready', async () => {
-  console.log('Bot iniciado correctamente');
+  console.log('================================');
+  console.log('BOT ENCENDIDO');
+  console.log(client.user.tag);
+  console.log('================================');
+
   try {
-    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, '1123790874741047356'), { body: commands });
-    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, '1464318287683780836'), { body: commands });
-    console.log('Comandos registrados');
+    await rest.put(
+      Routes.applicationGuildCommands(
+        CLIENT_ID,
+        '1123790874741047356'
+      ),
+      { body: commands }
+    );
+
+    await rest.put(
+      Routes.applicationGuildCommands(
+        CLIENT_ID,
+        '1464318287683780836'
+      ),
+      { body: commands }
+    );
+
+    console.log('Comandos registrados correctamente');
   } catch (err) {
-    console.error('ERROR REGISTRANDO COMANDOS:', err.message);
+    console.error('ERROR REGISTRANDO COMANDOS:', err);
   }
 });
 
@@ -96,53 +144,106 @@ client.once('ready', async () => {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  const userId = interaction.user.id;
-
   try {
-    // ===== CARNET =====
-    if (interaction.commandName === 'carnet') {
-      const attachment = interaction.options.getAttachment('imagen');
-      const rolElegido = interaction.options.getString('rol');
 
-      if (!attachment || !attachment.contentType.startsWith('image')) {
-        return safeReply(interaction, { content: 'Debes subir una imagen válida.', flags: MessageFlags.Ephemeral });
+    // ===== /CARNET =====
+    if (interaction.commandName === 'carnet') {
+
+      const imagen = interaction.options.getAttachment('imagen');
+      const categoria = interaction.options.getString('categoria');
+
+      if (!imagen.contentType.startsWith('image')) {
+        return safeReply(interaction, {
+          content: 'Debes subir una imagen valida.',
+          flags: MessageFlags.Ephemeral
+        });
       }
 
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({
+        flags: MessageFlags.Ephemeral
+      });
 
-      const canalCarnets = await client.channels.fetch(CANAL_CARNETS);
-      if (!canalCarnets) return interaction.editReply('No se encontró el canal de carnets.');
+      const canal = await client.channels.fetch(CANAL_CARNETS);
 
-      // Enviar la imagen limpia al canal
-      await canalCarnets.send({ files: [attachment.url] });
+      if (!canal) {
+        return interaction.editReply({
+          content: 'No se encontro el canal.'
+        });
+      }
 
-      // Guardar info en data.json
+      // ===== ENVIAR IMAGEN LIMPIA =====
+      await canal.send({
+        content:
+          `# ${ROLES_CARNETS[categoria]}\n` +
+          `Subido por: <@${interaction.user.id}>`,
+        files: [imagen.url]
+      });
+
+      // ===== GUARDAR =====
       const data = loadData();
-      data[userId] = {
-        url: attachment.url,
-        rol: rolElegido,
+
+      data[interaction.user.id] = {
+        categoria: categoria,
+        categoriaNombre: ROLES_CARNETS[categoria],
+        imagen: imagen.url,
         fecha: new Date().toISOString()
       };
+
       saveData(data);
 
-      return interaction.editReply({ content: 'Carnet subido correctamente al canal.', flags: MessageFlags.Ephemeral });
+      return interaction.editReply({
+        content: 'Carnet subido correctamente.'
+      });
     }
 
-    // ===== MYCARNET (opcional) =====
+    // ===== /MYCARNET =====
     if (interaction.commandName === 'mycarnet') {
-      const data = loadData();
-      const info = data[userId];
-      if (!info) return safeReply(interaction, { content: 'No has subido ningún carnet aún.', flags: MessageFlags.Ephemeral });
 
-      return safeReply(interaction, { content: `Tu carnet:\nRol: ${info.rol}\nURL: ${info.url}`, flags: MessageFlags.Ephemeral });
+      const data = loadData();
+
+      if (!data[interaction.user.id]) {
+        return safeReply(interaction, {
+          content: 'No tienes carnet registrado.',
+          flags: MessageFlags.Ephemeral
+        });
+      }
+
+      const carnet = data[interaction.user.id];
+
+      return safeReply(interaction, {
+        content:
+          `Categoria: ${carnet.categoriaNombre}\n` +
+          `${carnet.imagen}`,
+        flags: MessageFlags.Ephemeral
+      });
     }
 
   } catch (err) {
-    console.error('ERROR:', err);
+    console.error(err);
+
     try {
-      if (interaction.deferred) await interaction.editReply({ content: 'Se produjo un error.', flags: MessageFlags.Ephemeral });
-      else if (interaction.replied) await interaction.followUp({ content: 'Se produjo un error.', flags: MessageFlags.Ephemeral });
-      else await interaction.reply({ content: 'Se produjo un error.', flags: MessageFlags.Ephemeral });
+
+      if (interaction.deferred) {
+        await interaction.editReply({
+          content: 'Ocurrio un error.',
+          flags: MessageFlags.Ephemeral
+        });
+      }
+
+      else if (interaction.replied) {
+        await interaction.followUp({
+          content: 'Ocurrio un error.',
+          flags: MessageFlags.Ephemeral
+        });
+      }
+
+      else {
+        await interaction.reply({
+          content: 'Ocurrio un error.',
+          flags: MessageFlags.Ephemeral
+        });
+      }
+
     } catch {}
   }
 });
