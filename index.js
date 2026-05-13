@@ -703,16 +703,12 @@ client.on('interactionCreate', async interaction => {
       const regimientoData = REGIMIENTOS[regimientoKey];
       const embed = new EmbedBuilder()
         .setColor(0x1B4F72)
-        .setTitle('\🎖️ CARNET GENERADO')
+        .setTitle('🎖️ CARNET GENERADO')
         .setDescription(
-          '**' + nombreCompleto.toUpperCase() + '**
-' +
-          'Callsign: **' + matricula + '**
-' +
-          'Rango: **' + rango + '** (' + payGrade + ')
-' +
-          'Unidad: **' + regimientoData.nombre + '**
-' +
+          '**' + nombreCompleto.toUpperCase() + '**\n' +
+          'Callsign: **' + matricula + '**\n' +
+          'Rango: **' + rango + '** (' + payGrade + ')\n' +
+          'Unidad: **' + regimientoData.nombre + '**\n' +
           'MOS: **' + especialidad + '**'
         )
         .setImage('attachment://carnet_' + userId + '.png')
@@ -754,16 +750,12 @@ client.on('interactionCreate', async interaction => {
 
       const embed = new EmbedBuilder()
         .setColor(0x1B4F72)
-        .setTitle('\🎖️ TU CARNET USMC')
+        .setTitle('🎖️ TU CARNET USMC')
         .setDescription(
-          '**' + carnetData.nombre.toUpperCase() + '**
-' +
-          (matricula ? 'Callsign: **' + matricula + '**
-' : '') +
-          'Rango: **' + carnetData.rango + '** (' + carnetData.payGrade + ')
-' +
-          'Unidad: **' + regimientoData.nombre + '**
-' +
+          '**' + carnetData.nombre.toUpperCase() + '**\n' +
+          (matricula ? 'Callsign: **' + matricula + '**\n' : '') +
+          'Rango: **' + carnetData.rango + '** (' + carnetData.payGrade + ')\n' +
+          'Unidad: **' + regimientoData.nombre + '**\n' +
           'MOS: **' + carnetData.especialidad + '**'
         )
         .setImage('attachment://carnet_' + userId + '.png')
@@ -849,7 +841,7 @@ client.on('interactionCreate', async interaction => {
 
         const embed = new EmbedBuilder()
           .setColor(0x1B4F72)
-          .setTitle('\📋 LISTA DE CARNETS - ' + carnets.length + ' REGISTROS')
+          .setTitle('📋 LISTA DE CARNETS - ' + carnets.length + ' REGISTROS')
           .setDescription(lineas.join('\n'))
           .setFooter({ text: 'Panel de Administracion' });
 
@@ -880,11 +872,11 @@ client.on('interactionCreate', async interaction => {
 
         const embed = new EmbedBuilder()
           .setColor(0x1B4F72)
-          .setTitle('\✈️ LIGHTS ARMORED AIRLINES (AIR)')
+          .setTitle('✈️ LIGHTS ARMORED AIRLINES (AIR)')
           .setDescription('Lista de callsigns para los miembros de la faccion.')
           .addFields(
-            { name: '\👑 Miembros de la cupula', value: cupula.join('\n') || 'Sin asignar', inline: false },
-            { name: '\🪖 Miembros soldados', value: soldados.join('\n') || 'Sin asignar', inline: false }
+            { name: '👑 Miembros de la cupula', value: cupula.join('\n') || 'Sin asignar', inline: false },
+            { name: '🪖 Miembros soldados', value: soldados.join('\n') || 'Sin asignar', inline: false }
           )
           .setFooter({ text: 'Total activos: ' + activos.length });
 
@@ -921,14 +913,11 @@ client.on('interactionCreate', async interaction => {
         if (hiloLogs && hiloLogs.isTextBased()) {
           const logEmbed = new EmbedBuilder()
             .setColor(0x1B4F72)
-            .setTitle('\✅ NUEVA MATRICULA ASIGNADA')
+            .setTitle('✅ NUEVA MATRICULA ASIGNADA')
             .setDescription(
-              'Matricula: **' + matricula + '**
-' +
-              'Nombre: **' + nombre + '**
-' +
-              'Usuario: <@' + usuario.id + '>
-' +
+              'Matricula: **' + matricula + '**\n' +
+              'Nombre: **' + nombre + '**\n' +
+              'Usuario: <@' + usuario.id + '>\n' +
               'Asignado por: <@' + interaction.user.id + '>'
             )
             .setTimestamp();
@@ -965,14 +954,11 @@ client.on('interactionCreate', async interaction => {
         if (hiloLogs && hiloLogs.isTextBased()) {
           const logEmbed = new EmbedBuilder()
             .setColor(0x1B4F72)
-            .setTitle('\❌ BAJA DE MATRICULA')
+            .setTitle('❌ BAJA DE MATRICULA')
             .setDescription(
-              'Matricula: **' + matriculaInput + '**
-' +
-              'Nombre: **' + info.nombre + '**
-' +
-              'Usuario: <@' + uid + '>
-' +
+              'Matricula: **' + matriculaInput + '**\n' +
+              'Nombre: **' + info.nombre + '**\n' +
+              'Usuario: <@' + uid + '>\n' +
               'Dado de baja por: <@' + interaction.user.id + '>'
             )
             .setTimestamp();
@@ -1022,14 +1008,11 @@ client.on('interactionCreate', async interaction => {
         if (hiloLogs && hiloLogs.isTextBased()) {
           const logEmbed = new EmbedBuilder()
             .setColor(0x1B4F72)
-            .setTitle('\🔄 REACTIVACION DE MATRICULA')
+            .setTitle('🔄 REACTIVACION DE MATRICULA')
             .setDescription(
-              'Matricula: **' + info.matricula + '**
-' +
-              'Nombre: **' + info.nombre + '**
-' +
-              'Usuario: <@' + uid + '>
-' +
+              'Matricula: **' + info.matricula + '**\n' +
+              'Nombre: **' + info.nombre + '**\n' +
+              'Usuario: <@' + uid + '>\n' +
               'Reactivado por: <@' + interaction.user.id + '>'
             )
             .setTimestamp();
@@ -1058,7 +1041,7 @@ client.on('interactionCreate', async interaction => {
 
         const embed = new EmbedBuilder()
           .setColor(0x1B4F72)
-          .setTitle('\📜 HISTORIAL DE BAJAS - ' + bajas.length + ' REGISTROS')
+          .setTitle('📜 HISTORIAL DE BAJAS - ' + bajas.length + ' REGISTROS')
           .setDescription(lineas.join('\n'))
           .setFooter({ text: 'Sistema de Matriculas' });
 
