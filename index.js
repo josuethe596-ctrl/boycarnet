@@ -9,7 +9,7 @@ const {
   PermissionFlagsBits
 } = require('discord.js');
 const fs = require('fs');
-const { createCanvas, loadImage } = require('@napi-rs/canvas');
+const { createCanvas, loadImage, Image } = require('@napi-rs/canvas');
 
 // ===== PROTECCION ANTI-CRASH =====
 process.on('uncaughtException', err => console.error('ERROR GLOBAL:', err));
@@ -334,148 +334,299 @@ async function safeReply(interaction, options) {
   }
 }
 
-// ===== GENERAR CANVAS CARNET =====
+// ===== NUEVO DISEÑO DE CARNET PROFESIONAL =====
 async function generarCarnetCanvas(datos) {
   const { nombreCompleto, fotoKey, rango, payGrade, especialidad, regimientoKey, fechaIngreso, fechaExpiracion, matricula, userId } = datos;
 
   const regimientoData = REGIMIENTOS[regimientoKey];
   const fotoURL = FOTOS_SOLDADO[fotoKey];
 
-  const canvas = createCanvas(800, 1200);
+  // Canvas mas ancho, estilo tarjeta horizontal profesional
+  const W = 1200;
+  const H = 750;
+  const canvas = createCanvas(W, H);
   const ctx = canvas.getContext('2d');
 
-  ctx.fillStyle = '#0a0a0a';
-  ctx.fillRect(0, 0, 800, 1200);
+  // ===== FONDO BLANCO =====
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, W, H);
 
-  ctx.fillStyle = '#8B0000';
-  ctx.fillRect(0, 0, 800, 40);
-  ctx.fillRect(0, 1160, 800, 40);
+  // ===== HEADER AZUL PROFESIONAL =====
+  const headerH = 160;
+  ctx.fillStyle = '#1B4F72'; // Azul marino profesional
+  ctx.fillRect(0, 0, W, headerH);
 
-  ctx.fillStyle = '#8B0000';
-  [[40, 40, 60], [760, 40, 60], [40, 1160, 60], [760, 1160, 60]].forEach(([x, y, r]) => {
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-  });
+  // Esquinas redondeadas del header (simuladas)
+  // Sombra sutil del header
+  ctx.fillStyle = 'rgba(0,0,0,0.1)';
+  ctx.fillRect(0, headerH, W, 4);
 
-  ctx.strokeStyle = '#8B0000'; ctx.lineWidth = 4;
-  ctx.strokeRect(30, 30, 740, 1140);
+  // ===== LOGO DEL REGIMIENTO EN HEADER (izquierda) =====
+  try {
+    const logoImage = await loadImage(regimientoData.logo);
+    const logoSize = 110;
+    const logoX = 40;
+    const logoY = 25;
 
-  ctx.fillStyle = '#ffffff'; ctx.font = 'bold 22px Arial'; ctx.textAlign = 'center';
-  ctx.fillText('UNITED STATES MARINE CORPS', 400, 75);
-  ctx.fillStyle = '#c0c0c0'; ctx.font = '16px Arial';
-  ctx.fillText('OFFICIAL IDENTIFICATION CARD', 400, 95);
+    // Circulo blanco de fondo para el logo
+    ctx.beginPath();
+    ctx.arc(logoX + logoSize/2, logoY + logoSize/2, logoSize/2 + 8, 0, Math.PI * 2);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
 
-  if (matricula) {
-    ctx.fillStyle = '#D4AF37'; ctx.font = 'bold 18px Arial';
-    ctx.fillText('CALLSIGN: ' + matricula, 400, 115);
+    // Clip circular para el logo
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(logoX + logoSize/2, logoY + logoSize/2, logoSize/2, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(logoImage, logoX, logoY, logoSize, logoSize);
+    ctx.restore();
+
+    // Borde dorado del logo
+    ctx.beginPath();
+    ctx.arc(logoX + logoSize/2, logoY + logoSize/2, logoSize/2 + 4, 0, Math.PI * 2);
+    ctx.strokeStyle = '#D4AF37';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  } catch (logoErr) {
+    // Si falla el logo, dibujar circulo placeholder
+    ctx.beginPath();
+    ctx.arc(95, 80, 55, 0, Math.PI * 2);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
+    ctx.strokeStyle = '#D4AF37';
+    ctx.lineWidth = 3;
+    ctx.stroke();
   }
+
+  // ===== TEXTO DEL HEADER =====
+  // "UNITED STATES MARINE CORPS" - titulo grande dorado
+  ctx.fillStyle = '#D4AF37'; // Dorado
+  ctx.font = 'bold 52px Arial';
+  ctx.textAlign = 'left';
+  ctx.fillText('UNITED STATES', 180, 70);
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = 'bold 56px Arial';
+  ctx.fillText('MARINE CORPS', 180, 125);
+
+  // Linea decorativa dorada bajo el titulo
+  ctx.strokeStyle = '#D4AF37';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(180, 140);
+  ctx.lineTo(700, 140);
+  ctx.stroke();
+
+  // Subtitulo en header
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.font = '22px Arial';
+  ctx.textAlign = 'right';
+  ctx.fillText('OFFICIAL IDENTIFICATION CARD', W - 40, 70);
+
+  // Abreviatura del regimiento en header (derecha)
+  ctx.fillStyle = '#D4AF37';
+  ctx.font = 'bold 28px Arial';
+  ctx.fillText(regimientoData.abreviatura, W - 40, 110);
+
+  // ===== FOTO DEL SOLDADO (izquierda, debajo del header) =====
+  const fotoW = 280;
+  const fotoH = 380;
+  const fotoX = 50;
+  const fotoY = 200;
+
+  // Fondo degradado dorado para la foto (como en el ejemplo)
+  const gradient = ctx.createLinearGradient(fotoX, fotoY, fotoX + fotoW, fotoY + fotoH);
+  gradient.addColorStop(0, '#D4AF37');
+  gradient.addColorStop(0.5, '#F4D03F');
+  gradient.addColorStop(1, '#D4AF37');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(fotoX, fotoY, fotoW, fotoH);
+
+  // Sombra de la foto
+  ctx.fillStyle = 'rgba(0,0,0,0.15)';
+  ctx.fillRect(fotoX + 8, fotoY + 8, fotoW, fotoH);
 
   try {
     const fotoImage = await loadImage(fotoURL);
-    const fotoX = 60, fotoY = 140, fotoW = 280, fotoH = 350;
     const ratio = Math.max(fotoW / fotoImage.width, fotoH / fotoImage.height);
     const shiftX = (fotoW - fotoImage.width * ratio) / 2;
     const shiftY = (fotoH - fotoImage.height * ratio) / 2;
-    ctx.drawImage(fotoImage, 0, 0, fotoImage.width, fotoImage.height, fotoX + shiftX, fotoY + shiftY, fotoImage.width * ratio, fotoImage.height * ratio);
-    ctx.strokeStyle = '#D4AF37'; ctx.lineWidth = 4;
-    ctx.strokeRect(fotoX, fotoY, fotoW, fotoH);
+
+    ctx.drawImage(
+      fotoImage, 
+      0, 0, fotoImage.width, fotoImage.height, 
+      fotoX + shiftX, fotoY + shiftY, 
+      fotoImage.width * ratio, fotoImage.height * ratio
+    );
   } catch (imgErr) {
-    ctx.fillStyle = '#333'; ctx.fillRect(60, 140, 280, 350);
-    ctx.fillStyle = '#ff4444'; ctx.font = 'bold 20px Arial'; ctx.textAlign = 'center';
-    ctx.fillText('IMAGEN NO DISPONIBLE', 200, 315);
+    ctx.fillStyle = '#333';
+    ctx.fillRect(fotoX, fotoY, fotoW, fotoH);
+    ctx.fillStyle = '#ff4444';
+    ctx.font = 'bold 18px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('IMAGEN NO DISPONIBLE', fotoX + fotoW/2, fotoY + fotoH/2);
   }
 
-  ctx.fillStyle = '#ffffff'; ctx.font = 'bold 26px Arial'; ctx.textAlign = 'center';
-  const nombreUpper = nombreCompleto.toUpperCase();
-  const partes = nombreUpper.split(' ');
-  if (nombreUpper.length > 22) {
-    const mitad = Math.ceil(partes.length / 2);
-    ctx.fillText(partes.slice(0, mitad).join(' '), 200, 520);
-    ctx.fillText(partes.slice(mitad).join(' '), 200, 550);
-  } else {
-    ctx.fillText(nombreUpper, 200, 535);
+  // Borde de la foto
+  ctx.strokeStyle = '#1B4F72';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(fotoX, fotoY, fotoW, fotoH);
+
+  // ===== AREA DE INFORMACION (derecha) =====
+  const infoX = 380;
+  const infoW = 750;
+  let currentY = 210;
+
+  // Funcion para dibujar campo con linea separadora
+  function dibujarCampo(label, value, labelColor = '#1B4F72', valueColor = '#2C3E50') {
+    // Label pequeño
+    ctx.fillStyle = labelColor;
+    ctx.font = 'bold 18px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText(label.toUpperCase(), infoX, currentY);
+
+    // Valor grande
+    ctx.fillStyle = valueColor;
+    ctx.font = 'bold 32px Arial';
+    ctx.fillText(value.toUpperCase(), infoX, currentY + 38);
+
+    // Linea separadora
+    ctx.strokeStyle = '#BDC3C7';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(infoX, currentY + 52);
+    ctx.lineTo(infoX + infoW, currentY + 52);
+    ctx.stroke();
+
+    currentY += 75;
   }
 
-  const xDer = 400; let yPos = 160;
-  function dibujarCampo(titulo, valor, color) {
-    if (!color) color = '#FFD700';
-    ctx.fillStyle = '#888888'; ctx.font = 'bold 16px Arial'; ctx.textAlign = 'left';
-    ctx.fillText(titulo.toUpperCase(), xDer, yPos);
-    ctx.fillStyle = color; ctx.font = 'bold 30px Arial';
-    ctx.fillText(valor.toUpperCase(), xDer, yPos + 32);
-    ctx.strokeStyle = '#8B0000'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(xDer, yPos + 42); ctx.lineTo(740, yPos + 42); ctx.stroke();
-    yPos += 72;
-  }
-
-  dibujarCampo('RANK', rango);
-  dibujarCampo('PAY GRADE', payGrade);
+  // Dibujar todos los campos
+  dibujarCampo('NAME', nombreCompleto);
+  dibujarCampo('RANK', rango + '  (' + payGrade + ')');
   dibujarCampo('MOS / SPECIALTY', especialidad);
-  dibujarCampo('DATE OF ENTRY', fechaIngreso);
-  dibujarCampo('EXPIRATION DATE', fechaExpiracion, '#ff6666');
-  dibujarCampo('UNIT / REGIMENT', regimientoData.abreviatura, '#ffffff');
+  dibujarCampo('UNIT / REGIMENT', regimientoData.nombre);
 
-  ctx.save(); ctx.translate(22, 720); ctx.rotate(-Math.PI / 2);
-  ctx.fillStyle = '#8B0000'; ctx.font = 'bold 36px Arial'; ctx.textAlign = 'center';
-  ctx.fillText('SEMPER FIDELIS', 0, 0); ctx.restore();
+  // Fechas en una sola linea
+  ctx.fillStyle = '#1B4F72';
+  ctx.font = 'bold 18px Arial';
+  ctx.fillText('DATE OF ENTRY', infoX, currentY);
+  ctx.fillText('EXPIRATION DATE', infoX + 350, currentY);
 
-  ctx.beginPath(); ctx.arc(400, 760, 100, 0, Math.PI * 2);
-  ctx.strokeStyle = '#D4AF37'; ctx.lineWidth = 6; ctx.stroke();
-  ctx.beginPath(); ctx.arc(400, 760, 88, 0, Math.PI * 2);
-  ctx.fillStyle = '#1a1a1a'; ctx.fill();
-  ctx.fillStyle = '#D4AF37'; ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center';
-  ctx.fillText('UNITED STATES', 400, 740);
-  ctx.font = 'bold 22px Arial'; ctx.fillText('MARINE CORPS', 400, 765);
-  ctx.font = 'bold 12px Arial'; ctx.fillText('SINCE 1775', 400, 790);
+  ctx.fillStyle = '#2C3E50';
+  ctx.font = 'bold 28px Arial';
+  ctx.fillText(fechaIngreso, infoX, currentY + 35);
+  ctx.fillText(fechaExpiracion, infoX + 350, currentY + 35);
 
-  try {
-    const logoImage = await loadImage(regimientoData.logo);
-    const logoX = 580, logoY = 680, logoSize = 140;
-    ctx.beginPath(); ctx.arc(logoX + logoSize/2, logoY + logoSize/2, logoSize/2 + 5, 0, Math.PI * 2);
-    ctx.fillStyle = '#1a1a1a'; ctx.fill();
-    ctx.strokeStyle = '#D4AF37'; ctx.lineWidth = 3; ctx.stroke();
-    ctx.save(); ctx.beginPath(); ctx.arc(logoX + logoSize/2, logoY + logoSize/2, logoSize/2, 0, Math.PI * 2); ctx.clip();
-    ctx.drawImage(logoImage, logoX, logoY, logoSize, logoSize); ctx.restore();
-    ctx.fillStyle = '#D4AF37'; ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center';
-    ctx.fillText(regimientoData.abreviatura, logoX + logoSize/2, logoY + logoSize + 20);
-  } catch (logoErr) {
-    ctx.fillStyle = '#D4AF37'; ctx.font = 'bold 18px Arial'; ctx.textAlign = 'center';
-    ctx.fillText(regimientoData.abreviatura, 650, 750);
+  // Linea separadora para fechas
+  ctx.strokeStyle = '#BDC3C7';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(infoX, currentY + 50);
+  ctx.lineTo(infoX + infoW, currentY + 50);
+  ctx.stroke();
+
+  currentY += 75;
+
+  // Callsign / Matricula
+  if (matricula) {
+    ctx.fillStyle = '#1B4F72';
+    ctx.font = 'bold 18px Arial';
+    ctx.fillText('CALLSIGN', infoX, currentY);
+
+    ctx.fillStyle = '#C0392B'; // Rojo para el callsign
+    ctx.font = 'bold 36px Arial';
+    ctx.fillText(matricula, infoX, currentY + 40);
+
+    ctx.strokeStyle = '#BDC3C7';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(infoX, currentY + 55);
+    ctx.lineTo(infoX + infoW, currentY + 55);
+    ctx.stroke();
+
+    currentY += 75;
   }
 
-  ctx.fillStyle = '#3C3B6E'; ctx.fillRect(60, 1040, 80, 55);
-  ctx.fillStyle = '#B22234';
-  for (let i = 0; i < 7; i += 2) ctx.fillRect(140, 1040 + (i * 8), 40, 8);
+  // ===== TEXTO VERTICAL "USMC" A LA DERECHA =====
+  ctx.save();
+  ctx.translate(W - 50, H/2 + 20);
+  ctx.rotate(Math.PI / 2);
+
+  // Sombra del texto vertical
+  ctx.fillStyle = 'rgba(212, 175, 55, 0.3)';
+  ctx.font = 'bold 80px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('USMC', 4, 4);
+
+  // Texto dorado vertical
+  ctx.fillStyle = '#D4AF37';
+  ctx.font = 'bold 80px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('USMC', 0, 0);
+  ctx.restore();
+
+  // ===== BARRA INFERIOR CON INFO =====
+  const footerY = H - 70;
+
+  // Fondo del footer
+  ctx.fillStyle = '#1B4F72';
+  ctx.fillRect(0, footerY, W, 70);
+
+  // Linea dorada encima del footer
+  ctx.fillStyle = '#D4AF37';
+  ctx.fillRect(0, footerY, W, 4);
+
+  // Texto del footer
   ctx.fillStyle = '#FFFFFF';
-  for (let i = 1; i < 6; i += 2) ctx.fillRect(140, 1040 + (i * 8), 40, 8);
-  for (let row = 0; row < 5; row++) {
-    for (let col = 0; col < 6; col++) {
-      ctx.beginPath(); ctx.arc(68 + (col * 12), 1048 + (row * 10), 2, 0, Math.PI * 2); ctx.fill();
-    }
-  }
+  ctx.font = '16px Arial';
+  ctx.textAlign = 'left';
+  ctx.fillText('SEMPER FIDELIS  |  UNITED STATES MARINE CORPS  |  SINCE 1775', 30, footerY + 40);
 
-  ctx.fillStyle = '#ffffff'; ctx.font = 'bold 44px Arial'; ctx.textAlign = 'left';
-  ctx.fillText('MARINES', 155, 1075);
-  ctx.fillStyle = '#aaaaaa'; ctx.font = '13px Arial';
-  ctx.fillText('THE OFFICIAL WEBSITE OF THE UNITED', 155, 1095);
-  ctx.fillText('STATES MARINE CORPS', 155, 1110);
+  // ID del carnet a la derecha
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.font = '14px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText('ID: USMC-' + userId.slice(-8).toUpperCase() + ' | CARD ISSUED: ' + fechaIngreso, W - 30, footerY + 40);
 
-  ctx.fillStyle = '#ffffff'; const barX = 620;
-  for (let i = 0; i < 35; i++) {
+  // ===== SELLO/CODIGO DE BARRAS SIMULADO =====
+  const barX = 50;
+  const barY = H - 140;
+  ctx.fillStyle = '#2C3E50';
+  for (let i = 0; i < 40; i++) {
     const ancho = (i % 3 === 0) ? 4 : (i % 2 === 0 ? 3 : 2);
-    const gap = (i % 5 === 0) ? 6 : 4;
-    ctx.fillRect(barX + (i * gap), 940, ancho, 100);
+    const gap = (i % 5 === 0) ? 5 : 3;
+    ctx.fillRect(barX + (i * gap), barY, ancho, 45);
   }
-  ctx.font = 'bold 14px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = '#aaaaaa';
-  ctx.fillText('ID: USMC-' + userId.slice(-8).toUpperCase(), barX + 80, 1055);
 
-  ctx.fillStyle = '#D4AF37'; ctx.beginPath(); ctx.roundRect(680, 1040, 90, 55, 10); ctx.fill();
-  ctx.fillStyle = '#8B6914'; ctx.beginPath(); ctx.roundRect(685, 1045, 80, 45, 8); ctx.fill();
-  ctx.strokeStyle = '#D4AF37'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(695, 1055); ctx.lineTo(755, 1055);
-  ctx.moveTo(695, 1068); ctx.lineTo(755, 1068); ctx.stroke();
+  // Texto bajo el codigo
+  ctx.fillStyle = '#7F8C8D';
+  ctx.font = '12px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('USMC-' + userId.slice(-8).toUpperCase(), barX, barY + 60);
 
-  ctx.fillStyle = '#666666'; ctx.font = '10px Arial'; ctx.textAlign = 'right';
-  ctx.fillText('CARD ID: ' + userId + ' | USMC OFFICIAL', 780, 1145);
+  // ===== ESCUDO/MEDALLON PEQUEÑO =====
+  const shieldX = W - 120;
+  const shieldY = H - 130;
+
+  // Circulo dorado
+  ctx.beginPath();
+  ctx.arc(shieldX, shieldY, 35, 0, Math.PI * 2);
+  ctx.fillStyle = '#D4AF37';
+  ctx.fill();
+
+  // Circulo interior azul
+  ctx.beginPath();
+  ctx.arc(shieldX, shieldY, 28, 0, Math.PI * 2);
+  ctx.fillStyle = '#1B4F72';
+  ctx.fill();
+
+  // Estrella simplificada
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = 'bold 14px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('★', shieldX, shieldY + 5);
 
   return await canvas.encode('png');
 }
@@ -551,13 +702,17 @@ client.on('interactionCreate', async interaction => {
 
       const regimientoData = REGIMIENTOS[regimientoKey];
       const embed = new EmbedBuilder()
-        .setColor(0x8B0000)
-        .setTitle('CARNET GENERADO')
+        .setColor(0x1B4F72)
+        .setTitle('\🎖️ CARNET GENERADO')
         .setDescription(
-          '**' + nombreCompleto.toUpperCase() + '**\n' +
-          'Callsign: **' + matricula + '**\n' +
-          'Rango: **' + rango + '** (' + payGrade + ')\n' +
-          'Unidad: **' + regimientoData.nombre + '**\n' +
+          '**' + nombreCompleto.toUpperCase() + '**
+' +
+          'Callsign: **' + matricula + '**
+' +
+          'Rango: **' + rango + '** (' + payGrade + ')
+' +
+          'Unidad: **' + regimientoData.nombre + '**
+' +
           'MOS: **' + especialidad + '**'
         )
         .setImage('attachment://carnet_' + userId + '.png')
@@ -598,13 +753,17 @@ client.on('interactionCreate', async interaction => {
       const regimientoData = REGIMIENTOS[carnetData.regimiento];
 
       const embed = new EmbedBuilder()
-        .setColor(0x8B0000)
-        .setTitle('TU CARNET USMC')
+        .setColor(0x1B4F72)
+        .setTitle('\🎖️ TU CARNET USMC')
         .setDescription(
-          '**' + carnetData.nombre.toUpperCase() + '**\n' +
-          (matricula ? 'Callsign: **' + matricula + '**\n' : '') +
-          'Rango: **' + carnetData.rango + '** (' + carnetData.payGrade + ')\n' +
-          'Unidad: **' + regimientoData.nombre + '**\n' +
+          '**' + carnetData.nombre.toUpperCase() + '**
+' +
+          (matricula ? 'Callsign: **' + matricula + '**
+' : '') +
+          'Rango: **' + carnetData.rango + '** (' + carnetData.payGrade + ')
+' +
+          'Unidad: **' + regimientoData.nombre + '**
+' +
           'MOS: **' + carnetData.especialidad + '**'
         )
         .setImage('attachment://carnet_' + userId + '.png')
@@ -634,8 +793,8 @@ client.on('interactionCreate', async interaction => {
         const regimientoData = REGIMIENTOS[carnetData.regimiento];
 
         const embed = new EmbedBuilder()
-          .setColor(0x8B0000)
-          .setTitle('CARNET DE ' + carnetData.nombre.toUpperCase())
+          .setColor(0x1B4F72)
+          .setTitle('\🎖️ CARNET DE ' + carnetData.nombre.toUpperCase())
           .addFields(
             { name: 'Callsign', value: matricula, inline: true },
             { name: 'Rango', value: carnetData.rango + ' (' + carnetData.payGrade + ')', inline: true },
@@ -689,8 +848,8 @@ client.on('interactionCreate', async interaction => {
         });
 
         const embed = new EmbedBuilder()
-          .setColor(0x8B0000)
-          .setTitle('LISTA DE CARNETS - ' + carnets.length + ' REGISTROS')
+          .setColor(0x1B4F72)
+          .setTitle('\📋 LISTA DE CARNETS - ' + carnets.length + ' REGISTROS')
           .setDescription(lineas.join('\n'))
           .setFooter({ text: 'Panel de Administracion' });
 
@@ -720,12 +879,12 @@ client.on('interactionCreate', async interaction => {
         });
 
         const embed = new EmbedBuilder()
-          .setColor(0x8B0000)
-          .setTitle('LIGHTS ARMORED AIRLINES (AIR)')
+          .setColor(0x1B4F72)
+          .setTitle('\✈️ LIGHTS ARMORED AIRLINES (AIR)')
           .setDescription('Lista de callsigns para los miembros de la faccion.')
           .addFields(
-            { name: 'Miembros de la cupula', value: cupula.join('\n') || 'Sin asignar', inline: false },
-            { name: 'Miembros soldados', value: soldados.join('\n') || 'Sin asignar', inline: false }
+            { name: '\👑 Miembros de la cupula', value: cupula.join('\n') || 'Sin asignar', inline: false },
+            { name: '\🪖 Miembros soldados', value: soldados.join('\n') || 'Sin asignar', inline: false }
           )
           .setFooter({ text: 'Total activos: ' + activos.length });
 
@@ -761,12 +920,15 @@ client.on('interactionCreate', async interaction => {
         const hiloLogs = await obtenerCanalHilo(CANAL_LOGS);
         if (hiloLogs && hiloLogs.isTextBased()) {
           const logEmbed = new EmbedBuilder()
-            .setColor(0x8B0000)
-            .setTitle('NUEVA MATRICULA ASIGNADA')
+            .setColor(0x1B4F72)
+            .setTitle('\✅ NUEVA MATRICULA ASIGNADA')
             .setDescription(
-              'Matricula: **' + matricula + '**\n' +
-              'Nombre: **' + nombre + '**\n' +
-              'Usuario: <@' + usuario.id + '>\n' +
+              'Matricula: **' + matricula + '**
+' +
+              'Nombre: **' + nombre + '**
+' +
+              'Usuario: <@' + usuario.id + '>
+' +
               'Asignado por: <@' + interaction.user.id + '>'
             )
             .setTimestamp();
@@ -802,12 +964,15 @@ client.on('interactionCreate', async interaction => {
         const hiloLogs = await obtenerCanalHilo(CANAL_LOGS);
         if (hiloLogs && hiloLogs.isTextBased()) {
           const logEmbed = new EmbedBuilder()
-            .setColor(0x8B0000)
-            .setTitle('BAJA DE MATRICULA')
+            .setColor(0x1B4F72)
+            .setTitle('\❌ BAJA DE MATRICULA')
             .setDescription(
-              'Matricula: **' + matriculaInput + '**\n' +
-              'Nombre: **' + info.nombre + '**\n' +
-              'Usuario: <@' + uid + '>\n' +
+              'Matricula: **' + matriculaInput + '**
+' +
+              'Nombre: **' + info.nombre + '**
+' +
+              'Usuario: <@' + uid + '>
+' +
               'Dado de baja por: <@' + interaction.user.id + '>'
             )
             .setTimestamp();
@@ -856,12 +1021,15 @@ client.on('interactionCreate', async interaction => {
         const hiloLogs = await obtenerCanalHilo(CANAL_LOGS);
         if (hiloLogs && hiloLogs.isTextBased()) {
           const logEmbed = new EmbedBuilder()
-            .setColor(0x8B0000)
-            .setTitle('REACTIVACION DE MATRICULA')
+            .setColor(0x1B4F72)
+            .setTitle('\🔄 REACTIVACION DE MATRICULA')
             .setDescription(
-              'Matricula: **' + info.matricula + '**\n' +
-              'Nombre: **' + info.nombre + '**\n' +
-              'Usuario: <@' + uid + '>\n' +
+              'Matricula: **' + info.matricula + '**
+' +
+              'Nombre: **' + info.nombre + '**
+' +
+              'Usuario: <@' + uid + '>
+' +
               'Reactivado por: <@' + interaction.user.id + '>'
             )
             .setTimestamp();
@@ -889,8 +1057,8 @@ client.on('interactionCreate', async interaction => {
         });
 
         const embed = new EmbedBuilder()
-          .setColor(0x8B0000)
-          .setTitle('HISTORIAL DE BAJAS - ' + bajas.length + ' REGISTROS')
+          .setColor(0x1B4F72)
+          .setTitle('\📜 HISTORIAL DE BAJAS - ' + bajas.length + ' REGISTROS')
           .setDescription(lineas.join('\n'))
           .setFooter({ text: 'Sistema de Matriculas' });
 
