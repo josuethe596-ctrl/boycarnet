@@ -6,7 +6,8 @@ const {
   SlashCommandBuilder, 
   EmbedBuilder, 
   AttachmentBuilder,
-  PermissionFlagsBits
+  PermissionFlagsBits,
+  MessageFlags
 } = require('discord.js');
 const fs = require('fs');
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
@@ -83,6 +84,9 @@ const REGIMIENTOS = {
   }
 };
 
+// ===== RANGOS ORDENADOS (de mayor a menor) =====
+const RANGOS_ORDEN = ['COL', 'MAJ', 'CPT', 'LT', 'WO-1', 'WO-2', 'WO-3', 'SPC', 'SGT', 'CPL', 'LCPL', 'PFC', 'PVT'];
+
 // ===== ARCHIVOS =====
 const DATA_FILE = './data.json';
 const MATRICULAS_FILE = './matriculas.json';
@@ -115,14 +119,24 @@ function tieneAlgunRol(member, rolesArray) {
 }
 
 function obtenerRango(member) {
-  const rangos = ['COL', 'MAJ', 'CPT', 'LT', 'WO-1', 'WO-2', 'WO-3', 'SPC', 'SGT', 'CPL', 'LCPL', 'PFC', 'PVT'];
-  for (const rango of rangos) {
+  for (const rango of RANGOS_ORDEN) {
     const rolRango = member.roles.cache.find(r => 
       r.name.toUpperCase().includes(rango) || r.name.toUpperCase().startsWith(rango)
     );
     if (rolRango) return rango;
   }
   return 'PVT';
+}
+
+function obtenerRangoFull(member) {
+  const rango = obtenerRango(member);
+  const nombres = {
+    'COL': 'Colonel', 'MAJ': 'Major', 'CPT': 'Captain', 'LT': 'Lieutenant',
+    'WO-1': 'Warrant Officer 1', 'WO-2': 'Chief Warrant Officer 2', 'WO-3': 'Chief Warrant Officer 3',
+    'SPC': 'Specialist', 'SGT': 'Sergeant', 'CPL': 'Corporal',
+    'LCPL': 'Lance Corporal', 'PFC': 'Private First Class', 'PVT': 'Private'
+  };
+  return nombres[rango] || rango;
 }
 
 function formatearMatricula(numero) {
@@ -286,9 +300,22 @@ const commands = [
     .setDescription('Sistema de matriculas LAV (Lights Armored Vehicles)')
     .addSubcommand(o => o.setName('lista').setDescription('Ver lista 1 de matriculas activas'))
     .addSubcommand(o => o.setName('lista2').setDescription('Ver lista 2 de matriculas activas'))
-    .addSubcommand(o => o.setName('asignar').setDescription('Asignar matricula a un miembro').addUserOption(u => u.setName('usuario').setDescription('Usuario').setRequired(true)).addStringOption(s => s.setName('lista').setDescription('Lista (1 o 2)').setRequired(false).addChoices({name:'Lista 1',value:'1'},{name:'Lista 2',value:'2'})))
-    .addSubcommand(o => o.setName('baja').setDescription('Dar de baja un miembro').addStringOption(s => s.setName('matricula').setDescription('Matricula LAV-XX').setRequired(true)).addStringOption(s => s.setName('lista').setDescription('Lista (1 o 2)').setRequired(false).addChoices({name:'Lista 1',value:'1'},{name:'Lista 2',value:'2'})))
-    .addSubcommand(o => o.setName('reactivar').setDescription('Reactivar un miembro dado de baja').addStringOption(s => s.setName('matricula').setDescription('Matricula LAV-XX').setRequired(true)))
+    .addSubcommand(o => o.setName('asignar').setDescription('Asignar matricula a un miembro')
+      .addUserOption(u => u.setName('usuario').setDescription('Usuario').setRequired(true))
+      .addStringOption(s => s.setName('lista').setDescription('Lista (1 o 2)').setRequired(false)
+        .addChoices({name:'Lista 1',value:'1'},{name:'Lista 2',value:'2'}))
+      .addStringOption(s => s.setName('rango').setDescription('Rango para asignar matricula por rango').setRequired(false)
+        .addChoices(
+          {name:'SGT - Sergeant',value:'SGT'},{name:'CPL - Corporal',value:'CPL'},
+          {name:'LCPL - Lance Corporal',value:'LCPL'},{name:'PFC - Private First Class',value:'PFC'},
+          {name:'PVT - Private',value:'PVT'}
+        )))
+    .addSubcommand(o => o.setName('baja').setDescription('Dar de baja un miembro')
+      .addStringOption(s => s.setName('matricula').setDescription('Matricula LAV-XX').setRequired(true))
+      .addStringOption(s => s.setName('lista').setDescription('Lista (1 o 2)').setRequired(false)
+        .addChoices({name:'Lista 1',value:'1'},{name:'Lista 2',value:'2'})))
+    .addSubcommand(o => o.setName('reactivar').setDescription('Reactivar un miembro dado de baja')
+      .addStringOption(s => s.setName('matricula').setDescription('Matricula LAV-XX').setRequired(true)))
     .addSubcommand(o => o.setName('historial').setDescription('Ver historial de bajas'))
 ].map(c => c.toJSON());
 
@@ -605,11 +632,11 @@ client.on('interactionCreate', async interaction => {
     // ===== CARNET =====
     if (interaction.commandName === 'carnet') {
       if (!interaction.member.roles.cache.has(ROL_USUARIO)) {
-        return safeReply(interaction, { content: 'No tienes permiso para usar este comando.', ephemeral: true });
+        return safeReply(interaction, { content: 'No tienes permiso para usar este comando.', flags: MessageFlags.Ephemeral });
       }
 
       if (data[userId]) {
-        return safeReply(interaction, { content: 'Ya tienes un carnet generado. Usa /mycarnet para verlo.', ephemeral: true });
+        return safeReply(interaction, { content: 'Ya tienes un carnet generado. Usa /mycarnet para verlo.', flags: MessageFlags.Ephemeral });
       }
 
       await interaction.deferReply();
@@ -681,11 +708,11 @@ client.on('interactionCreate', async interaction => {
     // ===== MYCARNET =====
     if (interaction.commandName === 'mycarnet') {
       if (!interaction.member.roles.cache.has(ROL_USUARIO)) {
-        return safeReply(interaction, { content: 'No tienes permiso para usar este comando.', ephemeral: true });
+        return safeReply(interaction, { content: 'No tienes permiso para usar este comando.', flags: MessageFlags.Ephemeral });
       }
 
       if (!data[userId]) {
-        return safeReply(interaction, { content: 'No tienes un carnet generado. Usa /carnet para crear uno.', ephemeral: true });
+        return safeReply(interaction, { content: 'No tienes un carnet generado. Usa /carnet para crear uno.', flags: MessageFlags.Ephemeral });
       }
 
       await interaction.deferReply();
@@ -728,13 +755,13 @@ client.on('interactionCreate', async interaction => {
     // ===== ADMIN =====
     if (interaction.commandName === 'admin') {
       if (!tieneAlgunRol(interaction.member, ROLES_ADMIN)) {
-        return safeReply(interaction, { content: 'Acceso denegado. Comando exclusivo para personal autorizado.', ephemeral: true });
+        return safeReply(interaction, { content: 'Acceso denegado. Comando exclusivo para personal autorizado.', flags: MessageFlags.Ephemeral });
       }
 
       const subcommand = interaction.options.getSubcommand();
 
       if (subcommand === 'ver') {
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const usuario = interaction.options.getUser('usuario');
 
         if (!data[usuario.id]) {
@@ -763,7 +790,7 @@ client.on('interactionCreate', async interaction => {
       }
 
       if (subcommand === 'eliminar') {
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const usuario = interaction.options.getUser('usuario');
 
         if (!data[usuario.id]) {
@@ -788,7 +815,7 @@ client.on('interactionCreate', async interaction => {
       }
 
       if (subcommand === 'lista') {
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
         const carnets = Object.entries(data);
         if (carnets.length === 0) {
@@ -814,79 +841,98 @@ client.on('interactionCreate', async interaction => {
     if (interaction.commandName === 'matriculas') {
       const subcommand = interaction.options.getSubcommand();
 
+      // Helper function to build matriculas list with rank sections
+      async function buildMatriculasEmbed(targetData, listaNum, interaction) {
+        const activos = Object.entries(targetData || {});
+        if (activos.length === 0) {
+          return null;
+        }
+
+        // Group by rank
+        const porRango = {};
+        for (const rango of RANGOS_ORDEN) {
+          porRango[rango] = [];
+        }
+
+        for (const [uid, info] of activos) {
+          const member = interaction.guild.members.cache.get(uid);
+          const rango = member ? obtenerRango(member) : (info.rango || 'PVT');
+          const rangoFull = member ? obtenerRangoFull(member) : rango;
+
+          porRango[rango].push({
+            uid: uid,
+            matricula: info.matricula,
+            rango: rango,
+            rangoFull: rangoFull
+          });
+        }
+
+        const embed = new EmbedBuilder()
+          .setColor(0x1B4F72)
+          .setTitle('Lights Armored Vehicles (LAV) - Lista ' + listaNum)
+          .setDescription('Lista de callsigns para los miembros de la faccion.');
+
+        // Add fields for each rank that has members
+        for (const rango of RANGOS_ORDEN) {
+          const miembros = porRango[rango];
+          if (miembros.length === 0) continue;
+
+          const rangoEmojis = {
+            'COL': '⭐', 'MAJ': '🌟', 'CPT': '💠', 'LT': '🔷',
+            'WO-1': '🔹', 'WO-2': '🔹', 'WO-3': '🔹',
+            'SPC': '⚡', 'SGT': '🛡️', 'CPL': '⚔️',
+            'LCPL': '📌', 'PFC': '📍', 'PVT': '📝'
+          };
+
+          const lines = miembros.map(m => 
+            '**' + m.matricula + '** <@' + m.uid + '>'
+          );
+
+          embed.addFields({
+            name: rangoEmojis[rango] + ' ' + rango + ' (' + miembros.length + ')',
+            value: lines.join('\n'),
+            inline: false
+          });
+        }
+
+        embed.setFooter({ text: 'Total activos: ' + activos.length + ' | LAV Lista ' + listaNum });
+        return embed;
+      }
+
       // ===== LISTA 1 =====
       if (subcommand === 'lista') {
         await interaction.deferReply();
 
-        const activos = Object.entries(matriculasData.activos || {});
-        if (activos.length === 0) {
+        const embed = await buildMatriculasEmbed(matriculasData.activos, '1', interaction);
+        if (!embed) {
           return interaction.editReply({ content: 'No hay matriculas activas en la Lista 1.' });
         }
 
-        const cupula = [];
-        const soldados = [];
-
-        for (const [uid, info] of activos) {
-          const member = interaction.guild.members.cache.get(uid);
-          const discordName = member ? member.user.username : info.nombre;
-          const rango = member ? obtenerRango(member) : 'PVT';
-
-          const linea = info.matricula + ' ' + rango + ' ' + discordName;
-          if (info.numero <= 6) cupula.push(linea);
-          else soldados.push(linea);
-        }
-
-        let texto = 'Lista de callsigns para los miembros de la faccion.\n';
-        texto += 'Lights Armored Vehicles (LAV)\n\n';
-        texto += 'Miembros de la cupula:\n';
-        texto += cupula.join('\n') || 'Sin asignar';
-        texto += '\n\nMiembros soldados:\n';
-        texto += soldados.join('\n') || 'Sin asignar';
-
-        return interaction.editReply({ content: texto });
+        return interaction.editReply({ embeds: [embed] });
       }
 
       // ===== LISTA 2 =====
       if (subcommand === 'lista2') {
         await interaction.deferReply();
 
-        const activos2 = Object.entries(matriculasData.activos2 || {});
-        if (activos2.length === 0) {
+        const embed = await buildMatriculasEmbed(matriculasData.activos2, '2', interaction);
+        if (!embed) {
           return interaction.editReply({ content: 'No hay matriculas activas en la Lista 2.' });
         }
 
-        const cupula2 = [];
-        const soldados2 = [];
-
-        for (const [uid, info] of activos2) {
-          const member = interaction.guild.members.cache.get(uid);
-          const discordName = member ? member.user.username : info.nombre;
-          const rango = member ? obtenerRango(member) : 'PVT';
-
-          const linea = info.matricula + ' ' + rango + ' ' + discordName;
-          if (info.numero <= 6) cupula2.push(linea);
-          else soldados2.push(linea);
-        }
-
-        let texto = 'Lista de callsigns para los miembros de la faccion.\n';
-        texto += 'Lights Armored Vehicles (LAV) - Lista 2\n\n';
-        texto += 'Miembros de la cupula:\n';
-        texto += cupula2.join('\n') || 'Sin asignar';
-        texto += '\n\nMiembros soldados:\n';
-        texto += soldados2.join('\n') || 'Sin asignar';
-
-        return interaction.editReply({ content: texto });
+        return interaction.editReply({ embeds: [embed] });
       }
 
       // ===== ASIGNAR =====
       if (subcommand === 'asignar') {
         if (!tieneAlgunRol(interaction.member, ROLES_ADMIN)) {
-          return safeReply(interaction, { content: 'Acceso denegado.', ephemeral: true });
+          return safeReply(interaction, { content: 'Acceso denegado.', flags: MessageFlags.Ephemeral });
         }
 
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const usuario = interaction.options.getUser('usuario');
         const lista = interaction.options.getString('lista') || '1';
+        const rangoAsignar = interaction.options.getString('rango');
 
         const targetKey = lista === '2' ? 'activos2' : 'activos';
         const targetData = matriculasData[targetKey] || {};
@@ -896,18 +942,45 @@ client.on('interactionCreate', async interaction => {
           return interaction.editReply({ content: 'Este usuario ya tiene una matricula asignada: ' + targetData[usuario.id].matricula });
         }
 
-        const siguienteNumero = obtenerSiguienteMatricula(targetData, matriculasData[ultimoField] || 0);
-        const matricula = formatearMatricula(siguienteNumero);
+        let matricula;
+        let numero;
+
+        if (rangoAsignar) {
+          // Assign by rank: LAV-SGT-01, LAV-CPL-01, etc.
+          const rangoPrefix = rangoAsignar;
+          const existentes = Object.values(targetData)
+            .filter(m => m.rangoAsignado === rangoPrefix)
+            .map(m => m.numeroRango || 0)
+            .sort((a, b) => a - b);
+
+          let siguienteRangoNum = 1;
+          for (const num of existentes) {
+            if (num === siguienteRangoNum) siguienteRangoNum++;
+            else if (num > siguienteRangoNum) break;
+          }
+
+          numero = siguienteRangoNum;
+          matricula = 'LAV-' + rangoPrefix + '-' + numero.toString().padStart(2, '0');
+        } else {
+          // Regular sequential assignment
+          numero = obtenerSiguienteMatricula(targetData, matriculasData[ultimoField] || 0);
+          matricula = formatearMatricula(numero);
+        }
 
         if (!matriculasData[targetKey]) matriculasData[targetKey] = {};
         matriculasData[targetKey][usuario.id] = {
-          numero: siguienteNumero,
+          numero: numero,
           matricula: matricula,
           nombre: usuario.username,
           userId: usuario.id,
+          rangoAsignado: rangoAsignar || null,
+          numeroRango: rangoAsignar ? numero : null,
           fechaAsignacion: new Date().toISOString()
         };
-        matriculasData[ultimoField] = Math.max(matriculasData[ultimoField] || 0, siguienteNumero);
+
+        if (!rangoAsignar) {
+          matriculasData[ultimoField] = Math.max(matriculasData[ultimoField] || 0, numero);
+        }
         saveMatriculas(matriculasData);
 
         const hiloLogs = await obtenerCanalHilo(CANAL_LOGS);
@@ -918,6 +991,7 @@ client.on('interactionCreate', async interaction => {
             .setDescription(
               'Matricula: **' + matricula + '**\n' +
               'Lista: **' + (lista === '2' ? '2' : '1') + '**\n' +
+              (rangoAsignar ? 'Tipo: **Por Rango (' + rangoAsignar + ')**\n' : '') +
               'Usuario: <@' + usuario.id + '>\n' +
               'Asignado por: <@' + interaction.user.id + '>'
             )
@@ -931,10 +1005,10 @@ client.on('interactionCreate', async interaction => {
       // ===== BAJA =====
       if (subcommand === 'baja') {
         if (!tieneAlgunRol(interaction.member, ROLES_ADMIN)) {
-          return safeReply(interaction, { content: 'Acceso denegado.', ephemeral: true });
+          return safeReply(interaction, { content: 'Acceso denegado.', flags: MessageFlags.Ephemeral });
         }
 
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const matriculaInput = interaction.options.getString('matricula').toUpperCase();
         const lista = interaction.options.getString('lista') || '1';
 
@@ -979,10 +1053,10 @@ client.on('interactionCreate', async interaction => {
       // ===== REACTIVAR =====
       if (subcommand === 'reactivar') {
         if (!tieneAlgunRol(interaction.member, ROLES_ADMIN)) {
-          return safeReply(interaction, { content: 'Acceso denegado.', ephemeral: true });
+          return safeReply(interaction, { content: 'Acceso denegado.', flags: MessageFlags.Ephemeral });
         }
 
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const matriculaInput = interaction.options.getString('matricula').toUpperCase();
 
         const entrada = Object.entries(matriculasData.bajas || {}).find(([uid, info]) => info.matricula === matriculaInput);
@@ -996,7 +1070,7 @@ client.on('interactionCreate', async interaction => {
         const targetKey = lista === '2' ? 'activos2' : 'activos';
         if (!matriculasData[targetKey]) matriculasData[targetKey] = {};
 
-        const numeroOcupado = Object.values(matriculasData[targetKey]).some(m => m.numero === info.numero);
+        const numeroOcupado = Object.values(matriculasData[targetKey]).some(m => m.numero === info.numero && m.matricula === info.matricula);
         if (numeroOcupado) {
           const ultimo = lista === '2' ? (matriculasData.ultimoNumero2 || 0) : (matriculasData.ultimoNumero || 0);
           const nuevoNumero = obtenerSiguienteMatricula(matriculasData[targetKey], ultimo);
@@ -1004,6 +1078,9 @@ client.on('interactionCreate', async interaction => {
           info.numero = nuevoNumero;
           info.matricula = nuevaMatricula;
           info.matriculaAnterior = matriculaInput;
+          if (!info.rangoAsignado) {
+            matriculasData[lista === '2' ? 'ultimoNumero2' : 'ultimoNumero'] = Math.max(ultimo, nuevoNumero);
+          }
         }
 
         matriculasData[targetKey][uid] = {
@@ -1038,10 +1115,10 @@ client.on('interactionCreate', async interaction => {
       // ===== HISTORIAL =====
       if (subcommand === 'historial') {
         if (!tieneAlgunRol(interaction.member, ROLES_ADMIN)) {
-          return safeReply(interaction, { content: 'Acceso denegado.', ephemeral: true });
+          return safeReply(interaction, { content: 'Acceso denegado.', flags: MessageFlags.Ephemeral });
         }
 
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
         const bajas = Object.entries(matriculasData.bajas || {});
         if (bajas.length === 0) {
@@ -1067,11 +1144,11 @@ client.on('interactionCreate', async interaction => {
     console.error('ERROR:', err);
     try {
       if (interaction.deferred) {
-        await interaction.editReply({ content: 'Se produjo un error en el sistema.', ephemeral: true });
+        await interaction.editReply({ content: 'Se produjo un error en el sistema.', flags: MessageFlags.Ephemeral });
       } else if (interaction.replied) {
-        await interaction.followUp({ content: 'Se produjo un error en el sistema.', ephemeral: true });
+        await interaction.followUp({ content: 'Se produjo un error en el sistema.', flags: MessageFlags.Ephemeral });
       } else {
-        await interaction.reply({ content: 'Se produjo un error en el sistema.', ephemeral: true });
+        await interaction.reply({ content: 'Se produjo un error en el sistema.', flags: MessageFlags.Ephemeral });
       }
     } catch (replyErr) {
       console.error('No se pudo responder:', replyErr.message);
