@@ -217,8 +217,7 @@ client.on('interactionCreate', async interaction => {
       const categoria = interaction.options.getString('categoria');
       const numero = interaction.options.getInteger('numero');
 
-      // Buscar carnet por sección y número
-      const usuarioEntry = Object.entries(data).find(([uid, c]) => c.categoria === categoria && c.numero === numero);
+      const usuarioEntry = Object.entries(data).find(([_, c]) => c.categoria === categoria && c.numero === numero);
       if (!usuarioEntry) {
         return safeReply(interaction, { content: `No se encontró ningún carnet #${numero} en ${ROLES_CARNETS[categoria]}.`, flags: MessageFlags.Ephemeral });
       }
@@ -229,10 +228,9 @@ client.on('interactionCreate', async interaction => {
       const msg = mensajes.find(m => m.attachments.size && m.attachments.first().url === carnet.imagen);
       if (msg) await msg.delete().catch(() => {});
 
-      // Eliminar registro
       delete data[uid];
 
-      // ===== REASIGNAR NÚMEROS SECUENCIALES =====
+      // ===== REASIGNAR NÚMEROS =====
       const carnetsRestantes = Object.entries(data)
         .filter(([_, c]) => c.categoria === categoria)
         .sort((a, b) => new Date(a[1].fecha) - new Date(b[1].fecha));
