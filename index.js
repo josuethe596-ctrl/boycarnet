@@ -9,7 +9,7 @@ const {
   PermissionFlagsBits
 } = require('discord.js');
 const fs = require('fs');
-const { createCanvas, loadImage, Image } = require('@napi-rs/canvas');
+const { createCanvas, loadImage } = require('@napi-rs/canvas');
 
 // ===== PROTECCION ANTI-CRASH =====
 process.on('uncaughtException', err => console.error('ERROR GLOBAL:', err));
@@ -99,7 +99,7 @@ function saveData(data) {
 function loadMatriculas() {
   try { return JSON.parse(fs.readFileSync(MATRICULAS_FILE)); } 
   catch { 
-    const defaultData = { activos: {}, bajas: {}, ultimoNumero: 0 };
+    const defaultData = { activos: {}, activos2: {}, bajas: {}, ultimoNumero: 0, ultimoNumero2: 0 };
     fs.writeFileSync(MATRICULAS_FILE, JSON.stringify(defaultData, null, 2));
     return defaultData;
   }
@@ -126,17 +126,17 @@ function obtenerRango(member) {
 }
 
 function formatearMatricula(numero) {
-  return 'UH-' + numero.toString().padStart(2, '0');
+  return 'LAV-' + numero.toString().padStart(2, '0');
 }
 
-function obtenerSiguienteMatricula(matriculasData) {
-  const numerosActivos = Object.values(matriculasData.activos).map(m => m.numero).sort((a, b) => a - b);
+function obtenerSiguienteMatricula(targetData, ultimoNumero) {
+  const numerosActivos = Object.values(targetData).map(m => m.numero).sort((a, b) => a - b);
   let siguiente = 1;
   for (const num of numerosActivos) {
     if (num === siguiente) siguiente++;
     else if (num > siguiente) break;
   }
-  return siguiente;
+  return Math.max(siguiente, ultimoNumero + 1);
 }
 
 async function obtenerCanalHilo(channelId) {
@@ -283,11 +283,12 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('matriculas')
-    .setDescription('Sistema de matriculas (callsigns)')
-    .addSubcommand(o => o.setName('lista').setDescription('Ver lista de matriculas activas'))
-    .addSubcommand(o => o.setName('asignar').setDescription('Asignar matricula a un miembro').addUserOption(u => u.setName('usuario').setDescription('Usuario').setRequired(true)).addStringOption(s => s.setName('nombre').setDescription('Nombre del marine').setRequired(true)))
-    .addSubcommand(o => o.setName('baja').setDescription('Dar de baja un miembro').addStringOption(s => s.setName('matricula').setDescription('Matricula UH-XX').setRequired(true)))
-    .addSubcommand(o => o.setName('reactivar').setDescription('Reactivar un miembro dado de baja').addStringOption(s => s.setName('matricula').setDescription('Matricula UH-XX').setRequired(true)))
+    .setDescription('Sistema de matriculas LAV (Lights Armored Vehicles)')
+    .addSubcommand(o => o.setName('lista').setDescription('Ver lista 1 de matriculas activas'))
+    .addSubcommand(o => o.setName('lista2').setDescription('Ver lista 2 de matriculas activas'))
+    .addSubcommand(o => o.setName('asignar').setDescription('Asignar matricula a un miembro').addUserOption(u => u.setName('usuario').setDescription('Usuario').setRequired(true)).addStringOption(s => s.setName('lista').setDescription('Lista (1 o 2)').setRequired(false).addChoices({name:'Lista 1',value:'1'},{name:'Lista 2',value:'2'})))
+    .addSubcommand(o => o.setName('baja').setDescription('Dar de baja un miembro').addStringOption(s => s.setName('matricula').setDescription('Matricula LAV-XX').setRequired(true)).addStringOption(s => s.setName('lista').setDescription('Lista (1 o 2)').setRequired(false).addChoices({name:'Lista 1',value:'1'},{name:'Lista 2',value:'2'})))
+    .addSubcommand(o => o.setName('reactivar').setDescription('Reactivar un miembro dado de baja').addStringOption(s => s.setName('matricula').setDescription('Matricula LAV-XX').setRequired(true)))
     .addSubcommand(o => o.setName('historial').setDescription('Ver historial de bajas'))
 ].map(c => c.toJSON());
 
@@ -341,40 +342,32 @@ async function generarCarnetCanvas(datos) {
   const regimientoData = REGIMIENTOS[regimientoKey];
   const fotoURL = FOTOS_SOLDADO[fotoKey];
 
-  // Canvas mas ancho, estilo tarjeta horizontal profesional
   const W = 1200;
   const H = 750;
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext('2d');
 
-  // ===== FONDO BLANCO =====
   ctx.fillStyle = '#FFFFFF';
   ctx.fillRect(0, 0, W, H);
 
-  // ===== HEADER AZUL PROFESIONAL =====
   const headerH = 160;
-  ctx.fillStyle = '#1B4F72'; // Azul marino profesional
+  ctx.fillStyle = '#1B4F72';
   ctx.fillRect(0, 0, W, headerH);
 
-  // Esquinas redondeadas del header (simuladas)
-  // Sombra sutil del header
   ctx.fillStyle = 'rgba(0,0,0,0.1)';
   ctx.fillRect(0, headerH, W, 4);
 
-  // ===== LOGO DEL REGIMIENTO EN HEADER (izquierda) =====
   try {
     const logoImage = await loadImage(regimientoData.logo);
     const logoSize = 110;
     const logoX = 40;
     const logoY = 25;
 
-    // Circulo blanco de fondo para el logo
     ctx.beginPath();
     ctx.arc(logoX + logoSize/2, logoY + logoSize/2, logoSize/2 + 8, 0, Math.PI * 2);
     ctx.fillStyle = '#FFFFFF';
     ctx.fill();
 
-    // Clip circular para el logo
     ctx.save();
     ctx.beginPath();
     ctx.arc(logoX + logoSize/2, logoY + logoSize/2, logoSize/2, 0, Math.PI * 2);
@@ -382,14 +375,12 @@ async function generarCarnetCanvas(datos) {
     ctx.drawImage(logoImage, logoX, logoY, logoSize, logoSize);
     ctx.restore();
 
-    // Borde dorado del logo
     ctx.beginPath();
     ctx.arc(logoX + logoSize/2, logoY + logoSize/2, logoSize/2 + 4, 0, Math.PI * 2);
     ctx.strokeStyle = '#D4AF37';
     ctx.lineWidth = 3;
     ctx.stroke();
   } catch (logoErr) {
-    // Si falla el logo, dibujar circulo placeholder
     ctx.beginPath();
     ctx.arc(95, 80, 55, 0, Math.PI * 2);
     ctx.fillStyle = '#FFFFFF';
@@ -399,9 +390,7 @@ async function generarCarnetCanvas(datos) {
     ctx.stroke();
   }
 
-  // ===== TEXTO DEL HEADER =====
-  // "UNITED STATES MARINE CORPS" - titulo grande dorado
-  ctx.fillStyle = '#D4AF37'; // Dorado
+  ctx.fillStyle = '#D4AF37';
   ctx.font = 'bold 52px Arial';
   ctx.textAlign = 'left';
   ctx.fillText('UNITED STATES', 180, 70);
@@ -410,7 +399,6 @@ async function generarCarnetCanvas(datos) {
   ctx.font = 'bold 56px Arial';
   ctx.fillText('MARINE CORPS', 180, 125);
 
-  // Linea decorativa dorada bajo el titulo
   ctx.strokeStyle = '#D4AF37';
   ctx.lineWidth = 3;
   ctx.beginPath();
@@ -418,24 +406,20 @@ async function generarCarnetCanvas(datos) {
   ctx.lineTo(700, 140);
   ctx.stroke();
 
-  // Subtitulo en header
   ctx.fillStyle = 'rgba(255,255,255,0.8)';
   ctx.font = '22px Arial';
   ctx.textAlign = 'right';
   ctx.fillText('OFFICIAL IDENTIFICATION CARD', W - 40, 70);
 
-  // Abreviatura del regimiento en header (derecha)
   ctx.fillStyle = '#D4AF37';
   ctx.font = 'bold 28px Arial';
   ctx.fillText(regimientoData.abreviatura, W - 40, 110);
 
-  // ===== FOTO DEL SOLDADO (izquierda, debajo del header) =====
   const fotoW = 280;
   const fotoH = 380;
   const fotoX = 50;
   const fotoY = 200;
 
-  // Fondo degradado dorado para la foto (como en el ejemplo)
   const gradient = ctx.createLinearGradient(fotoX, fotoY, fotoX + fotoW, fotoY + fotoH);
   gradient.addColorStop(0, '#D4AF37');
   gradient.addColorStop(0.5, '#F4D03F');
@@ -443,7 +427,6 @@ async function generarCarnetCanvas(datos) {
   ctx.fillStyle = gradient;
   ctx.fillRect(fotoX, fotoY, fotoW, fotoH);
 
-  // Sombra de la foto
   ctx.fillStyle = 'rgba(0,0,0,0.15)';
   ctx.fillRect(fotoX + 8, fotoY + 8, fotoW, fotoH);
 
@@ -468,30 +451,26 @@ async function generarCarnetCanvas(datos) {
     ctx.fillText('IMAGEN NO DISPONIBLE', fotoX + fotoW/2, fotoY + fotoH/2);
   }
 
-  // Borde de la foto
   ctx.strokeStyle = '#1B4F72';
   ctx.lineWidth = 4;
   ctx.strokeRect(fotoX, fotoY, fotoW, fotoH);
 
-  // ===== AREA DE INFORMACION (derecha) =====
   const infoX = 380;
   const infoW = 750;
   let currentY = 210;
 
-  // Funcion para dibujar campo con linea separadora
-  function dibujarCampo(label, value, labelColor = '#1B4F72', valueColor = '#2C3E50') {
-    // Label pequeño
+  function dibujarCampo(label, value, labelColor, valueColor) {
+    if (!labelColor) labelColor = '#1B4F72';
+    if (!valueColor) valueColor = '#2C3E50';
     ctx.fillStyle = labelColor;
     ctx.font = 'bold 18px Arial';
     ctx.textAlign = 'left';
     ctx.fillText(label.toUpperCase(), infoX, currentY);
 
-    // Valor grande
     ctx.fillStyle = valueColor;
     ctx.font = 'bold 32px Arial';
     ctx.fillText(value.toUpperCase(), infoX, currentY + 38);
 
-    // Linea separadora
     ctx.strokeStyle = '#BDC3C7';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -502,13 +481,11 @@ async function generarCarnetCanvas(datos) {
     currentY += 75;
   }
 
-  // Dibujar todos los campos
   dibujarCampo('NAME', nombreCompleto);
   dibujarCampo('RANK', rango + '  (' + payGrade + ')');
   dibujarCampo('MOS / SPECIALTY', especialidad);
   dibujarCampo('UNIT / REGIMENT', regimientoData.nombre);
 
-  // Fechas en una sola linea
   ctx.fillStyle = '#1B4F72';
   ctx.font = 'bold 18px Arial';
   ctx.fillText('DATE OF ENTRY', infoX, currentY);
@@ -519,7 +496,6 @@ async function generarCarnetCanvas(datos) {
   ctx.fillText(fechaIngreso, infoX, currentY + 35);
   ctx.fillText(fechaExpiracion, infoX + 350, currentY + 35);
 
-  // Linea separadora para fechas
   ctx.strokeStyle = '#BDC3C7';
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -529,13 +505,12 @@ async function generarCarnetCanvas(datos) {
 
   currentY += 75;
 
-  // Callsign / Matricula
   if (matricula) {
     ctx.fillStyle = '#1B4F72';
     ctx.font = 'bold 18px Arial';
     ctx.fillText('CALLSIGN', infoX, currentY);
 
-    ctx.fillStyle = '#C0392B'; // Rojo para el callsign
+    ctx.fillStyle = '#C0392B';
     ctx.font = 'bold 36px Arial';
     ctx.fillText(matricula, infoX, currentY + 40);
 
@@ -549,48 +524,39 @@ async function generarCarnetCanvas(datos) {
     currentY += 75;
   }
 
-  // ===== TEXTO VERTICAL "USMC" A LA DERECHA =====
   ctx.save();
   ctx.translate(W - 50, H/2 + 20);
   ctx.rotate(Math.PI / 2);
 
-  // Sombra del texto vertical
   ctx.fillStyle = 'rgba(212, 175, 55, 0.3)';
   ctx.font = 'bold 80px Arial';
   ctx.textAlign = 'center';
   ctx.fillText('USMC', 4, 4);
 
-  // Texto dorado vertical
   ctx.fillStyle = '#D4AF37';
   ctx.font = 'bold 80px Arial';
   ctx.textAlign = 'center';
   ctx.fillText('USMC', 0, 0);
   ctx.restore();
 
-  // ===== BARRA INFERIOR CON INFO =====
   const footerY = H - 70;
 
-  // Fondo del footer
   ctx.fillStyle = '#1B4F72';
   ctx.fillRect(0, footerY, W, 70);
 
-  // Linea dorada encima del footer
   ctx.fillStyle = '#D4AF37';
   ctx.fillRect(0, footerY, W, 4);
 
-  // Texto del footer
   ctx.fillStyle = '#FFFFFF';
   ctx.font = '16px Arial';
   ctx.textAlign = 'left';
   ctx.fillText('SEMPER FIDELIS  |  UNITED STATES MARINE CORPS  |  SINCE 1775', 30, footerY + 40);
 
-  // ID del carnet a la derecha
   ctx.fillStyle = 'rgba(255,255,255,0.7)';
   ctx.font = '14px monospace';
   ctx.textAlign = 'right';
   ctx.fillText('ID: USMC-' + userId.slice(-8).toUpperCase() + ' | CARD ISSUED: ' + fechaIngreso, W - 30, footerY + 40);
 
-  // ===== SELLO/CODIGO DE BARRAS SIMULADO =====
   const barX = 50;
   const barY = H - 140;
   ctx.fillStyle = '#2C3E50';
@@ -600,29 +566,24 @@ async function generarCarnetCanvas(datos) {
     ctx.fillRect(barX + (i * gap), barY, ancho, 45);
   }
 
-  // Texto bajo el codigo
   ctx.fillStyle = '#7F8C8D';
   ctx.font = '12px monospace';
   ctx.textAlign = 'left';
   ctx.fillText('USMC-' + userId.slice(-8).toUpperCase(), barX, barY + 60);
 
-  // ===== ESCUDO/MEDALLON PEQUEÑO =====
   const shieldX = W - 120;
   const shieldY = H - 130;
 
-  // Circulo dorado
   ctx.beginPath();
   ctx.arc(shieldX, shieldY, 35, 0, Math.PI * 2);
   ctx.fillStyle = '#D4AF37';
   ctx.fill();
 
-  // Circulo interior azul
   ctx.beginPath();
   ctx.arc(shieldX, shieldY, 28, 0, Math.PI * 2);
   ctx.fillStyle = '#1B4F72';
   ctx.fill();
 
-  // Estrella simplificada
   ctx.fillStyle = '#FFFFFF';
   ctx.font = 'bold 14px Arial';
   ctx.textAlign = 'center';
@@ -664,7 +625,7 @@ client.on('interactionCreate', async interaction => {
 
       let matricula = null;
       if (!matriculasData.activos[userId]) {
-        const siguienteNumero = obtenerSiguienteMatricula(matriculasData);
+        const siguienteNumero = obtenerSiguienteMatricula(matriculasData.activos, matriculasData.ultimoNumero || 0);
         matricula = formatearMatricula(siguienteNumero);
         matriculasData.activos[userId] = {
           numero: siguienteNumero,
@@ -673,7 +634,7 @@ client.on('interactionCreate', async interaction => {
           userId: userId,
           fechaAsignacion: new Date().toISOString()
         };
-        matriculasData.ultimoNumero = Math.max(matriculasData.ultimoNumero, siguienteNumero);
+        matriculasData.ultimoNumero = Math.max(matriculasData.ultimoNumero || 0, siguienteNumero);
         saveMatriculas(matriculasData);
       } else {
         matricula = matriculasData.activos[userId].matricula;
@@ -703,7 +664,7 @@ client.on('interactionCreate', async interaction => {
       const regimientoData = REGIMIENTOS[regimientoKey];
       const embed = new EmbedBuilder()
         .setColor(0x1B4F72)
-        .setTitle('🎖️ CARNET GENERADO')
+        .setTitle('CARNET GENERADO')
         .setDescription(
           '**' + nombreCompleto.toUpperCase() + '**\n' +
           'Callsign: **' + matricula + '**\n' +
@@ -750,7 +711,7 @@ client.on('interactionCreate', async interaction => {
 
       const embed = new EmbedBuilder()
         .setColor(0x1B4F72)
-        .setTitle('🎖️ TU CARNET USMC')
+        .setTitle('TU CARNET USMC')
         .setDescription(
           '**' + carnetData.nombre.toUpperCase() + '**\n' +
           (matricula ? 'Callsign: **' + matricula + '**\n' : '') +
@@ -786,7 +747,7 @@ client.on('interactionCreate', async interaction => {
 
         const embed = new EmbedBuilder()
           .setColor(0x1B4F72)
-          .setTitle('\🎖️ CARNET DE ' + carnetData.nombre.toUpperCase())
+          .setTitle('CARNET DE ' + carnetData.nombre.toUpperCase())
           .addFields(
             { name: 'Callsign', value: matricula, inline: true },
             { name: 'Rango', value: carnetData.rango + ' (' + carnetData.payGrade + ')', inline: true },
@@ -841,7 +802,7 @@ client.on('interactionCreate', async interaction => {
 
         const embed = new EmbedBuilder()
           .setColor(0x1B4F72)
-          .setTitle('📋 LISTA DE CARNETS - ' + carnets.length + ' REGISTROS')
+          .setTitle('LISTA DE CARNETS - ' + carnets.length + ' REGISTROS')
           .setDescription(lineas.join('\n'))
           .setFooter({ text: 'Panel de Administracion' });
 
@@ -853,36 +814,71 @@ client.on('interactionCreate', async interaction => {
     if (interaction.commandName === 'matriculas') {
       const subcommand = interaction.options.getSubcommand();
 
+      // ===== LISTA 1 =====
       if (subcommand === 'lista') {
         await interaction.deferReply();
 
-        const activos = Object.entries(matriculasData.activos);
+        const activos = Object.entries(matriculasData.activos || {});
         if (activos.length === 0) {
-          return interaction.editReply({ content: 'No hay matriculas activas.' });
+          return interaction.editReply({ content: 'No hay matriculas activas en la Lista 1.' });
         }
 
         const cupula = [];
         const soldados = [];
 
-        activos.forEach(([uid, info]) => {
-          const linea = '`' + info.matricula + '` **' + info.nombre + '** <@' + uid + '>';
-          if (info.numero <= 9) cupula.push(linea);
+        for (const [uid, info] of activos) {
+          const member = interaction.guild.members.cache.get(uid);
+          const discordName = member ? member.user.username : info.nombre;
+          const rango = member ? obtenerRango(member) : 'PVT';
+
+          const linea = info.matricula + ' ' + rango + ' ' + discordName;
+          if (info.numero <= 6) cupula.push(linea);
           else soldados.push(linea);
-        });
+        }
 
-        const embed = new EmbedBuilder()
-          .setColor(0x1B4F72)
-          .setTitle('✈️ LIGHTS ARMORED AIRLINES (AIR)')
-          .setDescription('Lista de callsigns para los miembros de la faccion.')
-          .addFields(
-            { name: '👑 Miembros de la cupula', value: cupula.join('\n') || 'Sin asignar', inline: false },
-            { name: '🪖 Miembros soldados', value: soldados.join('\n') || 'Sin asignar', inline: false }
-          )
-          .setFooter({ text: 'Total activos: ' + activos.length });
+        let texto = 'Lista de callsigns para los miembros de la faccion.\n';
+        texto += 'Lights Armored Vehicles (LAV)\n\n';
+        texto += 'Miembros de la cupula:\n';
+        texto += cupula.join('\n') || 'Sin asignar';
+        texto += '\n\nMiembros soldados:\n';
+        texto += soldados.join('\n') || 'Sin asignar';
 
-        return interaction.editReply({ embeds: [embed] });
+        return interaction.editReply({ content: texto });
       }
 
+      // ===== LISTA 2 =====
+      if (subcommand === 'lista2') {
+        await interaction.deferReply();
+
+        const activos2 = Object.entries(matriculasData.activos2 || {});
+        if (activos2.length === 0) {
+          return interaction.editReply({ content: 'No hay matriculas activas en la Lista 2.' });
+        }
+
+        const cupula2 = [];
+        const soldados2 = [];
+
+        for (const [uid, info] of activos2) {
+          const member = interaction.guild.members.cache.get(uid);
+          const discordName = member ? member.user.username : info.nombre;
+          const rango = member ? obtenerRango(member) : 'PVT';
+
+          const linea = info.matricula + ' ' + rango + ' ' + discordName;
+          if (info.numero <= 6) cupula2.push(linea);
+          else soldados2.push(linea);
+        }
+
+        let texto = 'Lista de callsigns para los miembros de la faccion.\n';
+        texto += 'Lights Armored Vehicles (LAV) - Lista 2\n\n';
+        texto += 'Miembros de la cupula:\n';
+        texto += cupula2.join('\n') || 'Sin asignar';
+        texto += '\n\nMiembros soldados:\n';
+        texto += soldados2.join('\n') || 'Sin asignar';
+
+        return interaction.editReply({ content: texto });
+      }
+
+      // ===== ASIGNAR =====
       if (subcommand === 'asignar') {
         if (!tieneAlgunRol(interaction.member, ROLES_ADMIN)) {
           return safeReply(interaction, { content: 'Acceso denegado.', ephemeral: true });
@@ -890,33 +886,38 @@ client.on('interactionCreate', async interaction => {
 
         await interaction.deferReply({ ephemeral: true });
         const usuario = interaction.options.getUser('usuario');
-        const nombre = interaction.options.getString('nombre');
+        const lista = interaction.options.getString('lista') || '1';
 
-        if (matriculasData.activos[usuario.id]) {
-          return interaction.editReply({ content: 'Este usuario ya tiene una matricula asignada: ' + matriculasData.activos[usuario.id].matricula });
+        const targetKey = lista === '2' ? 'activos2' : 'activos';
+        const targetData = matriculasData[targetKey] || {};
+        const ultimoField = lista === '2' ? 'ultimoNumero2' : 'ultimoNumero';
+
+        if (targetData[usuario.id]) {
+          return interaction.editReply({ content: 'Este usuario ya tiene una matricula asignada: ' + targetData[usuario.id].matricula });
         }
 
-        const siguienteNumero = obtenerSiguienteMatricula(matriculasData);
+        const siguienteNumero = obtenerSiguienteMatricula(targetData, matriculasData[ultimoField] || 0);
         const matricula = formatearMatricula(siguienteNumero);
 
-        matriculasData.activos[usuario.id] = {
+        if (!matriculasData[targetKey]) matriculasData[targetKey] = {};
+        matriculasData[targetKey][usuario.id] = {
           numero: siguienteNumero,
           matricula: matricula,
-          nombre: nombre,
+          nombre: usuario.username,
           userId: usuario.id,
           fechaAsignacion: new Date().toISOString()
         };
-        matriculasData.ultimoNumero = Math.max(matriculasData.ultimoNumero, siguienteNumero);
+        matriculasData[ultimoField] = Math.max(matriculasData[ultimoField] || 0, siguienteNumero);
         saveMatriculas(matriculasData);
 
         const hiloLogs = await obtenerCanalHilo(CANAL_LOGS);
         if (hiloLogs && hiloLogs.isTextBased()) {
           const logEmbed = new EmbedBuilder()
             .setColor(0x1B4F72)
-            .setTitle('✅ NUEVA MATRICULA ASIGNADA')
+            .setTitle('NUEVA MATRICULA ASIGNADA')
             .setDescription(
               'Matricula: **' + matricula + '**\n' +
-              'Nombre: **' + nombre + '**\n' +
+              'Lista: **' + (lista === '2' ? '2' : '1') + '**\n' +
               'Usuario: <@' + usuario.id + '>\n' +
               'Asignado por: <@' + interaction.user.id + '>'
             )
@@ -924,9 +925,10 @@ client.on('interactionCreate', async interaction => {
           hiloLogs.send({ embeds: [logEmbed] }).catch(() => {});
         }
 
-        return interaction.editReply({ content: 'Matricula **' + matricula + '** asignada a <@' + usuario.id + '> (' + nombre + ').' });
+        return interaction.editReply({ content: 'Matricula **' + matricula + '** asignada a <@' + usuario.id + '> (Lista ' + (lista === '2' ? '2' : '1') + ').' });
       }
 
+      // ===== BAJA =====
       if (subcommand === 'baja') {
         if (!tieneAlgunRol(interaction.member, ROLES_ADMIN)) {
           return safeReply(interaction, { content: 'Acceso denegado.', ephemeral: true });
@@ -934,30 +936,36 @@ client.on('interactionCreate', async interaction => {
 
         await interaction.deferReply({ ephemeral: true });
         const matriculaInput = interaction.options.getString('matricula').toUpperCase();
+        const lista = interaction.options.getString('lista') || '1';
 
-        const entrada = Object.entries(matriculasData.activos).find(([uid, info]) => info.matricula === matriculaInput);
+        const targetKey = lista === '2' ? 'activos2' : 'activos';
+        const targetData = matriculasData[targetKey] || {};
+
+        const entrada = Object.entries(targetData).find(([uid, info]) => info.matricula === matriculaInput);
 
         if (!entrada) {
           return interaction.editReply({ content: 'No se encontro ningun miembro activo con la matricula ' + matriculaInput + '.' });
         }
 
         const [uid, info] = entrada;
+        if (!matriculasData.bajas) matriculasData.bajas = {};
         matriculasData.bajas[uid] = {
           ...info,
+          lista: lista,
           fechaBaja: new Date().toISOString(),
           motivo: 'Baja voluntaria/administrativa'
         };
-        delete matriculasData.activos[uid];
+        delete targetData[uid];
         saveMatriculas(matriculasData);
 
         const hiloLogs = await obtenerCanalHilo(CANAL_LOGS);
         if (hiloLogs && hiloLogs.isTextBased()) {
           const logEmbed = new EmbedBuilder()
             .setColor(0x1B4F72)
-            .setTitle('❌ BAJA DE MATRICULA')
+            .setTitle('BAJA DE MATRICULA')
             .setDescription(
               'Matricula: **' + matriculaInput + '**\n' +
-              'Nombre: **' + info.nombre + '**\n' +
+              'Lista: **' + lista + '**\n' +
               'Usuario: <@' + uid + '>\n' +
               'Dado de baja por: <@' + interaction.user.id + '>'
             )
@@ -965,9 +973,10 @@ client.on('interactionCreate', async interaction => {
           hiloLogs.send({ embeds: [logEmbed] }).catch(() => {});
         }
 
-        return interaction.editReply({ content: 'Matricula **' + matriculaInput + '** (' + info.nombre + ') dada de baja correctamente.' });
+        return interaction.editReply({ content: 'Matricula **' + matriculaInput + '** dada de baja correctamente.' });
       }
 
+      // ===== REACTIVAR =====
       if (subcommand === 'reactivar') {
         if (!tieneAlgunRol(interaction.member, ROLES_ADMIN)) {
           return safeReply(interaction, { content: 'Acceso denegado.', ephemeral: true });
@@ -976,24 +985,28 @@ client.on('interactionCreate', async interaction => {
         await interaction.deferReply({ ephemeral: true });
         const matriculaInput = interaction.options.getString('matricula').toUpperCase();
 
-        const entrada = Object.entries(matriculasData.bajas).find(([uid, info]) => info.matricula === matriculaInput);
+        const entrada = Object.entries(matriculasData.bajas || {}).find(([uid, info]) => info.matricula === matriculaInput);
 
         if (!entrada) {
           return interaction.editReply({ content: 'No se encontro ningun miembro dado de baja con la matricula ' + matriculaInput + '.' });
         }
 
         const [uid, info] = entrada;
+        const lista = info.lista || '1';
+        const targetKey = lista === '2' ? 'activos2' : 'activos';
+        if (!matriculasData[targetKey]) matriculasData[targetKey] = {};
 
-        const numeroOcupado = Object.values(matriculasData.activos).some(m => m.numero === info.numero);
+        const numeroOcupado = Object.values(matriculasData[targetKey]).some(m => m.numero === info.numero);
         if (numeroOcupado) {
-          const nuevoNumero = obtenerSiguienteMatricula(matriculasData);
+          const ultimo = lista === '2' ? (matriculasData.ultimoNumero2 || 0) : (matriculasData.ultimoNumero || 0);
+          const nuevoNumero = obtenerSiguienteMatricula(matriculasData[targetKey], ultimo);
           const nuevaMatricula = formatearMatricula(nuevoNumero);
           info.numero = nuevoNumero;
           info.matricula = nuevaMatricula;
           info.matriculaAnterior = matriculaInput;
         }
 
-        matriculasData.activos[uid] = {
+        matriculasData[targetKey][uid] = {
           ...info,
           fechaReactivacion: new Date().toISOString()
         };
@@ -1008,7 +1021,7 @@ client.on('interactionCreate', async interaction => {
         if (hiloLogs && hiloLogs.isTextBased()) {
           const logEmbed = new EmbedBuilder()
             .setColor(0x1B4F72)
-            .setTitle('🔄 REACTIVACION DE MATRICULA')
+            .setTitle('REACTIVACION DE MATRICULA')
             .setDescription(
               'Matricula: **' + info.matricula + '**\n' +
               'Nombre: **' + info.nombre + '**\n' +
@@ -1022,6 +1035,7 @@ client.on('interactionCreate', async interaction => {
         return interaction.editReply({ content: msg });
       }
 
+      // ===== HISTORIAL =====
       if (subcommand === 'historial') {
         if (!tieneAlgunRol(interaction.member, ROLES_ADMIN)) {
           return safeReply(interaction, { content: 'Acceso denegado.', ephemeral: true });
@@ -1029,7 +1043,7 @@ client.on('interactionCreate', async interaction => {
 
         await interaction.deferReply({ ephemeral: true });
 
-        const bajas = Object.entries(matriculasData.bajas);
+        const bajas = Object.entries(matriculasData.bajas || {});
         if (bajas.length === 0) {
           return interaction.editReply({ content: 'No hay historial de bajas.' });
         }
@@ -1041,7 +1055,7 @@ client.on('interactionCreate', async interaction => {
 
         const embed = new EmbedBuilder()
           .setColor(0x1B4F72)
-          .setTitle('📜 HISTORIAL DE BAJAS - ' + bajas.length + ' REGISTROS')
+          .setTitle('HISTORIAL DE BAJAS - ' + bajas.length + ' REGISTROS')
           .setDescription(lineas.join('\n'))
           .setFooter({ text: 'Sistema de Matriculas' });
 
