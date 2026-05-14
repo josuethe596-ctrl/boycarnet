@@ -31,7 +31,6 @@ const ROLES_CARNETS = {
   '1249080467198836787': 'Junior Enlisted'
 };
 
-// Orden de categorías para agrupar (primero = arriba)
 const CATEGORIA_ORDEN = [
   '1249081905631203419',
   '1465107741550051369',
@@ -57,7 +56,7 @@ async function safeReply(interaction, options) {
     if (interaction.deferred) return await interaction.editReply(options);
     if (interaction.replied) return await interaction.followUp(options);
     else return await interaction.reply(options);
-  } catch (err) { console.error(err); }
+  } catch (err) { console.error('safeReply error:', err); }
 }
 
 // ===== OBTENER TODOS LOS CARNETS DEL CANAL =====
@@ -70,7 +69,6 @@ async function obtenerCarnetsDelCanal(canal) {
     for (const [msgId, msg] of mensajes) {
       if (msg.attachments.size === 0) continue;
       
-      // Buscar a qué usuario pertenece este mensaje
       const entry = Object.entries(data).find(([userId, info]) => info.mensajeId === msgId);
       if (entry) {
         carnets.push({
@@ -90,8 +88,10 @@ async function obtenerCarnetsDelCanal(canal) {
 
 // ===== REORGANIZAR TODO EL CANAL =====
 async function reorganizarCanal(canal) {
+  console.log('=== INICIANDO REORGANIZACIÓN ===');
   const data = loadData();
   const carnets = await obtenerCarnetsDelCanal(canal);
+  console.log(`Carnets encontrados: ${carnets.length}`);
   
   // Agrupar por categoría
   const porCategoria = {};
@@ -103,13 +103,22 @@ async function reorganizarCanal(canal) {
     }
   }
   
+  console.log('Por categoría:', Object.entries(porCategoria).map(([k,v]) => `${ROLES_CARNETS[k]}: ${v.length}`).join(', '));
+  
   // Borrar todos los mensajes actuales
+  console.log('Borrando mensajes antiguos...');
   for (const carnet of carnets) {
-    await carnet.msg.delete().catch(() => {});
+    try {
+      await carnet.msg.delete();
+      console.log(`Borrado mensaje de ${carnet.userId}`);
+    } catch (e) {
+      console.error(`Error borrando mensaje ${carnet.mensajeId}:`, e.message);
+    }
   }
   
   // Reenviar en orden
   const nuevoData = {};
+  let totalEnviados = 0;
   
   for (const catId of CATEGORIA_ORDEN) {
     const lista = porCategoria[catId];
@@ -127,22 +136,32 @@ async function reorganizarCanal(canal) {
         content = `<<@${carnet.userId}>`;
       }
       
-      const nuevoMsg = await canal.send({
-        content: content,
-        files: [carnet.imagen]
-      });
-      
-      nuevoData[carnet.userId] = {
-        categoria: carnet.categoria,
-        categoriaNombre: carnet.categoriaNombre,
-        imagen: carnet.imagen,
-        mensajeId: nuevoMsg.id,
-        fecha: carnet.fecha
-      };
+      try {
+        console.log(`Enviando carnet de ${carnet.userId} en ${nombreRol}...`);
+        const nuevoMsg = await canal.send({
+          content: content,
+          files: [carnet.imagen]
+        });
+        
+        console.log(`✅ Enviado: ${nuevoMsg.id}`);
+        
+        nuevoData[carnet.userId] = {
+          categoria: carnet.categoria,
+          categoriaNombre: carnet.categoriaNombre,
+          imagen: carnet.imagen,
+          mensajeId: nuevoMsg.id,
+          fecha: carnet.fecha
+        };
+        totalEnviados++;
+      } catch (err) {
+        console.error(`❌ Error enviando carnet de ${carnet.userId}:`, err.message);
+      }
     }
   }
   
-  // Guardar nuevos IDs
+  console.log(`Total enviados: ${totalEnviados}`);
+  
+  // Actualizar data.json
   for (const [userId, info] of Object.entries(nuevoData)) {
     data[userId] = info;
   }
@@ -153,6 +172,7 @@ async function reorganizarCanal(canal) {
   }
   
   saveData(data);
+  console.log('=== REORGANIZACIÓN COMPLETADA ===');
   return nuevoData;
 }
 
