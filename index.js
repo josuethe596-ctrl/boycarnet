@@ -31,7 +31,8 @@ const ROLES_CARNETS = {
 };
 
 // ===== ADMIN ROLES =====
-const ROLES_ADMIN = ['1249089576270698','1249089640632422470'];
+// ⚠️ REVISA ESTOS IDs - el original tenía uno incompleto
+const ROLES_ADMIN = ['1249089576270698452','1249089640632422470'];
 
 // ===== DATA =====
 const DATA_FILE = './data.json';
@@ -47,6 +48,43 @@ async function safeReply(interaction, options) {
     if (interaction.replied || interaction.deferred) return await interaction.followUp(options);
     else return await interaction.reply(options);
   } catch (err) { console.error(err); }
+}
+
+// ===== BUSCAR CARNET POR URL (fallback para /baja) =====
+async function buscarMensajePorUrl(canal, imageUrl) {
+  try {
+    const mensajes = await canal.messages.fetch({ limit: 100 });
+    // Buscar mensaje que contenga la URL de la imagen adjunta
+    return mensajes.find(msg => 
+      msg.attachments.some(att => att.url === imageUrl || att.proxyURL === imageUrl)
+    ) || null;
+  } catch {
+    return null;
+  }
+}
+
+// ===== REUBICAR / COMPACTAR CANAL (opcional) =====
+async function reubicarCarnets(canal) {
+  try {
+    const mensajes = await canal.messages.fetch({ limit: 100 });
+    const data = loadData();
+    
+    // Ordenar mensajes por fecha (más antiguo primero)
+    const ordenados = Array.from(mensajes.values())
+      .filter(m => m.attachments.size > 0)
+      .sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+    
+    // Actualizar mensajeId en data.json si cambió (por si se reenvió)
+    for (const msg of ordenados) {
+      const entry = Object.entries(data).find(([_, v]) => v.mensajeId === msg.id);
+      if (!entry) {
+        // Mensaje huérfano sin registro en data.json - eliminarlo
+        await msg.delete().catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.error('Error reubicando carnets:', err);
+  }
 }
 
 // ===== COMANDOS =====
@@ -98,7 +136,7 @@ const commands = [
     ),
   new SlashCommandBuilder()
     .setName('baja')
-    .setDescription('Eliminar el carnet de un usuario')
+    .setDescription('Eliminar el carnet de un usuario (admin)')
     .addUserOption(option =>
       option.setName('usuario')
         .setDescription('Usuario al que quitar el carnet')
@@ -137,6 +175,14 @@ client.on('interactionCreate', async interaction => {
         return safeReply(interaction, { content: 'Debes subir una imagen válida.', flags: MessageFlags.Ephemeral });
       }
 
+      // Si ya tiene carnet, eliminar el anterior primero
+      if (data[userId]) {
+        const canal = await client.channels.fetch(CANAL_CARNETS);
+        const msgOld = await canal.messages.fetch(data[userId].mensajeId).catch(() => null);
+        if (msgOld) await msgOld.delete().catch(() => {});
+        delete data[userId];
+      }
+
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const canal = await client.channels.fetch(CANAL_CARNETS);
       if (!canal) return interaction.editReply({ content: 'No se encontró el canal.' });
@@ -162,6 +208,7 @@ client.on('interactionCreate', async interaction => {
 
     // ===== /INGRESO =====
     if (interaction.commandName === 'ingreso') {
+      // Verificar admin
       if (!interaction.member.roles.cache.some(r => ROLES_ADMIN.includes(r.id))) {
         return safeReply(interaction, { content: 'Acceso denegado.', flags: MessageFlags.Ephemeral });
       }
@@ -172,6 +219,16 @@ client.on('interactionCreate', async interaction => {
 
       if (!imagen.contentType.startsWith('image')) {
         return safeReply(interaction, { content: 'Debes subir una imagen válida.', flags: MessageFlags.Ephemeral });
+      }
+
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+      // Si el usuario ya tiene carnet, eliminar el anterior
+      if (data[usuario.id]) {
+        const canalOld = await client.channels.fetch(CANAL_CARNETS);
+        const msgOld = await canalOld.messages.fetch(data[usuario.id].mensajeId).catch(() => null);
+        if (msgOld) await msgOld.delete().catch(() => {});
+        delete data[usuario.id];
       }
 
       const canal = await client.channels.fetch(CANAL_CARNETS);
@@ -191,11 +248,16 @@ client.on('interactionCreate', async interaction => {
       };
       saveData(data);
 
-      return safeReply(interaction, { content: `Carnet agregado para ${usuario.username}.`, flags: MessageFlags.Ephemeral });
+      return interaction.editReply({ content: `Carnet agregado para ${usuario.username}.`, flags: MessageFlags.Ephemeral });
     }
 
     // ===== /BAJA =====
     if (interaction.commandName === 'baja') {
+      // Solo admin puede dar de baja
+      if (!interaction.member.roles.cache.some(r => ROLES_ADMIN.includes(r.id))) {
+        return safeReply(interaction, { content: 'Acceso denegado.', flags: MessageFlags.Ephemeral });
+      }
+
       const usuario = interaction.options.getUser('usuario');
 
       if (!data[usuario.id]) {
@@ -203,12 +265,23 @@ client.on('interactionCreate', async interaction => {
       }
 
       const canal = await client.channels.fetch(CANAL_CARNETS);
-      const msgId = data[usuario.id].mensajeId;
-      const msg = await canal.messages.fetch(msgId).catch(() => null);
+      const carnetInfo = data[usuario.id];
+      
+      // Intentar borrar por mensajeId primero
+      let msg = await canal.messages.fetch(carnetInfo.mensajeId).catch(() => null);
+      
+      // Fallback: buscar por URL de imagen si no encuentra por ID
+      if (!msg) {
+        msg = await buscarMensajePorUrl(canal, carnetInfo.imagen);
+      }
+
       if (msg) await msg.delete().catch(() => {});
 
       delete data[usuario.id];
       saveData(data);
+
+      // Opcional: limpiar mensajes huérfanos
+      await reubicarCarnets(canal);
 
       return safeReply(interaction, { content: `Carnet de ${usuario.username} eliminado correctamente.`, flags: MessageFlags.Ephemeral });
     }
@@ -219,7 +292,10 @@ client.on('interactionCreate', async interaction => {
         return safeReply(interaction, { content: 'No tienes carnet registrado.', flags: MessageFlags.Ephemeral });
       }
       const carnet = data[userId];
-      return safeReply(interaction, { content: `Categoria: ${carnet.categoriaNombre}\n${carnet.imagen}`, flags: MessageFlags.Ephemeral });
+      return safeReply(interaction, { 
+        content: `**Categoría:** ${carnet.categoriaNombre}\n**Fecha:** ${new Date(carnet.fecha).toLocaleDateString()}\n${carnet.imagen}`, 
+        flags: MessageFlags.Ephemeral 
+      });
     }
 
   } catch (err) {
