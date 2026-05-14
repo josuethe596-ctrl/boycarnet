@@ -21,6 +21,9 @@ const TOKEN = process.env.TOKEN;
 const CLIENT_ID = '1503744068134637750';
 const CANAL_CARNETS = '1444812609441501275';
 
+// ===== GUILD IDs donde registrar comandos (instantáneo) =====
+const GUILD_IDS = ['1123790874741047356', '1464318287683780836'];
+
 // ===== ROLES / SECCIONES =====
 const ROLES_CARNETS = {
   '1249081905631203419': 'Commissioned Officers',
@@ -145,13 +148,24 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 client.once('clientReady', async () => {
   console.log(`Bot iniciado: ${client.user.tag}`);
   try {
-    // Borrar comandos globales primero para forzar actualización
+    // 1. BORRAR comandos globales (para evitar duplicados/conflictos)
     await rest.put(Routes.applicationCommands(CLIENT_ID), { body: [] });
     console.log('Comandos globales borrados');
     
-    // Registrar comandos nuevos
-    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-    console.log('Comandos registrados globalmente correctamente');
+    // 2. Registrar comandos POR GUILD (instantáneo)
+    for (const guildId of GUILD_IDS) {
+      try {
+        await rest.put(
+          Routes.applicationGuildCommands(CLIENT_ID, guildId), 
+          { body: commands }
+        );
+        console.log(`Comandos registrados en guild ${guildId}`);
+      } catch (guildErr) {
+        console.error(`Error en guild ${guildId}:`, guildErr.message);
+      }
+    }
+    
+    console.log('Registro de comandos completado');
   } catch (err) { 
     console.error('ERROR REGISTRANDO COMANDOS:', err); 
   }
