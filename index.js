@@ -39,6 +39,25 @@ const CATEGORIA_ORDEN = [
   '1249080467198836787'
 ];
 
+// ===== ORDEN DE RANGOS (de más alto a más bajo) =====
+// Solo para /organizar, NO aparece en el canal
+const RANGO_ORDEN = [
+  '1249070554330169456',  // Rango 1 (más alto)
+  '1249071682476314716',  // Rango 2
+  '1249072776480952430',  // Rango 3
+  '1249073570932330647',  // Rango 4
+  '1465109878744940667',  // Rango 5
+  '1249074305438978150',  // Rango 6
+  '1465108847633895456',  // Rango 7
+  '1249075344410153061',  // Rango 8
+  '1249076492147626044',  // Rango 9
+  '1249076802312212500',  // Rango 10
+  '1249077129384165450',  // Rango 11
+  '1249078185077772409',  // Rango 12
+  '1249078391530061855',  // Rango 13
+  '1249078539135877169'   // Rango 14 (más bajo)
+];
+
 // ===== ADMIN ROLES =====
 const ROLES_ADMIN = ['1249089576270698452','1249089640632422470'];
 
@@ -59,34 +78,19 @@ async function safeReply(interaction, options) {
   } catch (err) { console.error('safeReply error:', err); }
 }
 
-// ===== ENCONTRAR ÚLTIMO MENSAJE DE UNA CATEGORÍA =====
-async function encontrarUltimoDeCategoria(canal, categoriaId, data) {
-  try {
-    const mensajes = await canal.messages.fetch({ limit: 100 });
-    const msgsArray = Array.from(mensajes.values()).reverse(); // De más antiguo a más nuevo
-    
-    let ultimoMsg = null;
-    let esPrimera = true;
-    
-    for (const msg of msgsArray) {
-      if (msg.attachments.size === 0) continue;
-      
-      // Buscar a qué usuario pertenece
-      const entry = Object.entries(data).find(([userId, info]) => info.mensajeId === msg.id);
-      if (!entry) continue;
-      
-      const info = entry[1];
-      if (info.categoria === categoriaId) {
-        ultimoMsg = msg;
-        esPrimera = false;
-      }
-    }
-    
-    return { ultimoMsg, esPrimera };
-  } catch (err) {
-    console.error('Error buscando categoría:', err);
-    return { ultimoMsg: null, esPrimera: true };
+// ===== OBTENER RANGO DE UN USUARIO (para ordenar) =====
+function obtenerRangoUsuario(member) {
+  if (!member || !member.roles) return null;
+  for (const rangoId of RANGO_ORDEN) {
+    if (member.roles.cache.has(rangoId)) return rangoId;
   }
+  return null;
+}
+
+// ===== POSICIÓN DEL RANGO =====
+function obtenerPosicionRango(rangoId) {
+  const pos = RANGO_ORDEN.indexOf(rangoId);
+  return pos === -1 ? 999 : pos;
 }
 
 // ===== COMANDOS =====
@@ -154,7 +158,7 @@ const commands = [
     .setDescription('Ver tu carnet registrado'),
   new SlashCommandBuilder()
     .setName('organizar')
-    .setDescription('Reorganizar todo el canal de carnets (admin)')
+    .setDescription('Reorganizar carnets por rango (admin)')
 ].map(cmd => cmd.toJSON());
 
 // ===== REGISTRAR COMANDOS =====
@@ -212,6 +216,10 @@ client.on('interactionCreate', async interaction => {
       const canal = await client.channels.fetch(CANAL_CARNETS);
       if (!canal) return interaction.editReply({ content: '❌ No se encontró el canal.' });
 
+      // Obtener rango del usuario (SOLO para guardar en data.json, NO se muestra)
+      const member = await interaction.guild.members.fetch(usuario.id).catch(() => null);
+      const rangoId = obtenerRangoUsuario(member);
+
       // Si ya tiene carnet, eliminarlo
       if (data[usuario.id]) {
         try {
@@ -224,12 +232,23 @@ client.on('interactionCreate', async interaction => {
         saveData(data);
       }
 
-      // Buscar dónde poner el nuevo carnet
-      const { ultimoMsg, esPrimera } = await encontrarUltimoDeCategoria(canal, categoria, data);
+      // Buscar último carnet de esta categoría para poner debajo
+      const mensajes = await canal.messages.fetch({ limit: 100 });
+      let ultimoMsgCategoria = null;
+      let hayCategoria = false;
+      
+      for (const [msgId, msg] of mensajes) {
+        if (msg.attachments.size === 0) continue;
+        const entry = Object.entries(data).find(([uid, info]) => info.mensajeId === msgId);
+        if (entry && entry[1].categoria === categoria) {
+          hayCategoria = true;
+          ultimoMsgCategoria = msg;
+        }
+      }
 
-      // Preparar contenido
+      // Preparar contenido (SIN rango, solo como antes)
       let content;
-      if (esPrimera) {
+      if (!hayCategoria) {
         content = `# ${ROLES_CARNETS[categoria]}\n<<@${usuario.id}>`;
       } else {
         content = `<<@${usuario.id}>`;
@@ -237,15 +256,13 @@ client.on('interactionCreate', async interaction => {
 
       // Enviar mensaje
       let msg;
-      if (ultimoMsg) {
-        // Responder al último mensaje de esa categoría (aparece justo debajo)
-        msg = await ultimoMsg.reply({
+      if (ultimoMsgCategoria) {
+        msg = await ultimoMsgCategoria.reply({
           content: content,
           files: [imagen.url],
           allowedMentions: { parse: [] }
         });
       } else {
-        // Primera vez que se envía esta categoría
         msg = await canal.send({
           content: content,
           files: [imagen.url],
@@ -253,10 +270,11 @@ client.on('interactionCreate', async interaction => {
         });
       }
 
-      // Guardar en data.json
+      // Guardar en data.json (con rangoId para ordenar luego)
       data[usuario.id] = {
         categoria,
         categoriaNombre: ROLES_CARNETS[categoria],
+        rangoId: rangoId,  // SOLO para /organizar
         imagen: imagen.url,
         mensajeId: msg.id,
         fecha: new Date().toISOString()
@@ -264,7 +282,7 @@ client.on('interactionCreate', async interaction => {
       saveData(data);
 
       return interaction.editReply({ 
-        content: `✅ Carnet de **${ROLES_CARNETS[categoria]}** subido para <@${usuario.id}>.`, 
+        content: `✅ Carnet de **${ROLES_CARNETS[categoria]}** subido para <@${usuario.id}>.\n💡 Usa \`/organizar\` para ordenar por rango.`, 
         flags: MessageFlags.Ephemeral 
       });
     }
@@ -291,7 +309,9 @@ client.on('interactionCreate', async interaction => {
       const canal = await client.channels.fetch(CANAL_CARNETS);
       if (!canal) return interaction.editReply({ content: '❌ No se encontró el canal.' });
 
-      // Si ya tiene carnet, eliminarlo
+      const member = await interaction.guild.members.fetch(usuario.id).catch(() => null);
+      const rangoId = obtenerRangoUsuario(member);
+
       if (data[usuario.id]) {
         try {
           const msgOld = await canal.messages.fetch(data[usuario.id].mensajeId);
@@ -303,19 +323,29 @@ client.on('interactionCreate', async interaction => {
         saveData(data);
       }
 
-      // Buscar dónde poner el nuevo carnet
-      const { ultimoMsg, esPrimera } = await encontrarUltimoDeCategoria(canal, categoria, data);
+      const mensajes = await canal.messages.fetch({ limit: 100 });
+      let ultimoMsgCategoria = null;
+      let hayCategoria = false;
+      
+      for (const [msgId, msg] of mensajes) {
+        if (msg.attachments.size === 0) continue;
+        const entry = Object.entries(data).find(([uid, info]) => info.mensajeId === msgId);
+        if (entry && entry[1].categoria === categoria) {
+          hayCategoria = true;
+          ultimoMsgCategoria = msg;
+        }
+      }
 
       let content;
-      if (esPrimera) {
+      if (!hayCategoria) {
         content = `# ${ROLES_CARNETS[categoria]}\n<<@${usuario.id}>`;
       } else {
         content = `<<@${usuario.id}>`;
       }
 
       let msg;
-      if (ultimoMsg) {
-        msg = await ultimoMsg.reply({
+      if (ultimoMsgCategoria) {
+        msg = await ultimoMsgCategoria.reply({
           content: content,
           files: [imagen.url],
           allowedMentions: { parse: [] }
@@ -331,6 +361,7 @@ client.on('interactionCreate', async interaction => {
       data[usuario.id] = {
         categoria,
         categoriaNombre: ROLES_CARNETS[categoria],
+        rangoId: rangoId,
         imagen: imagen.url,
         mensajeId: msg.id,
         fecha: new Date().toISOString()
@@ -396,9 +427,15 @@ client.on('interactionCreate', async interaction => {
         if (msg.attachments.size === 0) continue;
         const entry = Object.entries(data).find(([uid, info]) => info.mensajeId === msg.id);
         if (entry) {
+          const [uid, info] = entry;
+          // Obtener rango actual del usuario
+          const member = await canal.guild.members.fetch(uid).catch(() => null);
+          const rangoActual = obtenerRangoUsuario(member) || info.rangoId;
+          
           carnets.push({
-            userId: entry[0],
-            ...entry[1],
+            userId: uid,
+            ...info,
+            rangoId: rangoActual,
             msg: msg
           });
         }
@@ -416,12 +453,25 @@ client.on('interactionCreate', async interaction => {
         }
       }
 
-      // Reenviar en orden por categoría
+      // Agrupar por categoría
+      const porCategoria = {};
+      CATEGORIA_ORDEN.forEach(cat => porCategoria[cat] = []);
+      
+      for (const c of carnets) {
+        if (porCategoria[c.categoria]) {
+          porCategoria[c.categoria].push(c);
+        }
+      }
+
+      // Reenviar en orden por CATEGORÍA y luego por RANGO
       const nuevoData = {};
       
       for (const catId of CATEGORIA_ORDEN) {
-        const lista = carnets.filter(c => c.categoria === catId);
+        const lista = porCategoria[catId];
         if (lista.length === 0) continue;
+
+        // ORDENAR POR RANGO (más alto primero)
+        lista.sort((a, b) => obtenerPosicionRango(a.rangoId) - obtenerPosicionRango(b.rangoId));
 
         let primera = true;
         for (const c of lista) {
@@ -443,6 +493,7 @@ client.on('interactionCreate', async interaction => {
             nuevoData[c.userId] = {
               categoria: c.categoria,
               categoriaNombre: c.categoriaNombre,
+              rangoId: c.rangoId,
               imagen: c.imagen,
               mensajeId: nuevoMsg.id,
               fecha: c.fecha
@@ -464,7 +515,7 @@ client.on('interactionCreate', async interaction => {
       saveData(data);
 
       return interaction.editReply({ 
-        content: `✅ Canal organizado. ${Object.keys(nuevoData).length} carnets reubicados.`, 
+        content: `✅ Canal organizado. ${Object.keys(nuevoData).length} carnets ordenados por rango.`, 
         flags: MessageFlags.Ephemeral 
       });
     }
