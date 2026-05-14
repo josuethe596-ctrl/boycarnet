@@ -47,7 +47,8 @@ function saveData(data) { fs.writeFileSync(DATA_FILE, JSON.stringify(data, null,
 // ===== SAFE REPLY =====
 async function safeReply(interaction, options) {
   try {
-    if (interaction.replied || interaction.deferred) return await interaction.followUp(options);
+    if (interaction.deferred) return await interaction.editReply(options);
+    if (interaction.replied) return await interaction.followUp(options);
     else return await interaction.reply(options);
   } catch (err) { console.error(err); }
 }
@@ -185,10 +186,9 @@ client.on('interactionCreate', async interaction => {
       const categoria = interaction.options.getString('categoria');
       const usuario = interaction.options.getUser('usuario');
 
-      // Validación defensiva
       if (!usuario) {
         return safeReply(interaction, { 
-          content: '❌ Error: No se pudo obtener el usuario. Intenta de nuevo.', 
+          content: '❌ Error: No se pudo obtener el usuario.', 
           flags: MessageFlags.Ephemeral 
         });
       }
@@ -197,7 +197,6 @@ client.on('interactionCreate', async interaction => {
         return safeReply(interaction, { content: '❌ Debes subir una imagen válida.', flags: MessageFlags.Ephemeral });
       }
 
-      // Si ya tiene carnet, eliminar el anterior
       if (data[usuario.id]) {
         const canal = await client.channels.fetch(CANAL_CARNETS);
         const msgOld = await canal.messages.fetch(data[usuario.id].mensajeId).catch(() => null);
@@ -209,13 +208,11 @@ client.on('interactionCreate', async interaction => {
       const canal = await client.channels.fetch(CANAL_CARNETS);
       if (!canal) return interaction.editReply({ content: '❌ No se encontró el canal.' });
 
-      // Subir mensaje con nombre de rol y tag del usuario ARRIBA de la imagen
       const msg = await canal.send({
         content: `# ${ROLES_CARNETS[categoria]}\n<<@${usuario.id}>`,
         files: [imagen.url]
       });
 
-      // Guardar info en data.json
       data[usuario.id] = {
         categoria,
         categoriaNombre: ROLES_CARNETS[categoria],
@@ -297,6 +294,9 @@ client.on('interactionCreate', async interaction => {
         return safeReply(interaction, { content: '❌ Este usuario no tiene carnet registrado.', flags: MessageFlags.Ephemeral });
       }
 
+      // DEFER antes de operaciones lentas (fetch canal, fetch msg, delete)
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
       const canal = await client.channels.fetch(CANAL_CARNETS);
       const carnetInfo = data[usuario.id];
       
@@ -308,7 +308,7 @@ client.on('interactionCreate', async interaction => {
       saveData(data);
       await reubicarCarnets(canal);
 
-      return safeReply(interaction, { 
+      return interaction.editReply({ 
         content: `✅ Carnet de <@${usuario.id}> eliminado correctamente.`, 
         flags: MessageFlags.Ephemeral 
       });
