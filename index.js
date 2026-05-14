@@ -22,7 +22,7 @@ const CLIENT_ID = '1503744068134637750';
 const CANAL_CARNETS = '1444812609441501275';
 const GUILD_IDS = ['1123790874741047356', '1464318287683780836'];
 
-// ===== ROLES / SECCIONES (orden de prioridad) =====
+// ===== ROLES / SECCIONES =====
 const ROLES_CARNETS = {
   '1249081905631203419': 'Commissioned Officers',
   '1465107741550051369': 'Warrant Officers',
@@ -59,121 +59,34 @@ async function safeReply(interaction, options) {
   } catch (err) { console.error('safeReply error:', err); }
 }
 
-// ===== OBTENER TODOS LOS CARNETS DEL CANAL =====
-async function obtenerCarnetsDelCanal(canal) {
+// ===== ENCONTRAR ÚLTIMO MENSAJE DE UNA CATEGORÍA =====
+async function encontrarUltimoDeCategoria(canal, categoriaId, data) {
   try {
     const mensajes = await canal.messages.fetch({ limit: 100 });
-    const data = loadData();
-    const carnets = [];
+    const msgsArray = Array.from(mensajes.values()).reverse(); // De más antiguo a más nuevo
     
-    for (const [msgId, msg] of mensajes) {
+    let ultimoMsg = null;
+    let esPrimera = true;
+    
+    for (const msg of msgsArray) {
       if (msg.attachments.size === 0) continue;
       
-      const entry = Object.entries(data).find(([userId, info]) => info.mensajeId === msgId);
-      if (entry) {
-        carnets.push({
-          userId: entry[0],
-          ...entry[1],
-          msg: msg
-        });
-      }
-    }
-    
-    return carnets;
-  } catch (err) {
-    console.error('Error obteniendo carnets:', err);
-    return [];
-  }
-}
-
-// ===== REORGANIZAR TODO EL CANAL =====
-async function reorganizarCanal(canal) {
-  console.log('=== INICIANDO REORGANIZACIÓN ===');
-  const data = loadData();
-  const carnets = await obtenerCarnetsDelCanal(canal);
-  console.log(`Carnets encontrados: ${carnets.length}`);
-  
-  // Agrupar por categoría
-  const porCategoria = {};
-  CATEGORIA_ORDEN.forEach(cat => porCategoria[cat] = []);
-  
-  for (const carnet of carnets) {
-    if (porCategoria[carnet.categoria]) {
-      porCategoria[carnet.categoria].push(carnet);
-    }
-  }
-  
-  console.log('Por categoría:', Object.entries(porCategoria).map(([k,v]) => `${ROLES_CARNETS[k]}: ${v.length}`).join(', '));
-  
-  // Borrar todos los mensajes actuales
-  console.log('Borrando mensajes antiguos...');
-  for (const carnet of carnets) {
-    try {
-      await carnet.msg.delete();
-      console.log(`Borrado mensaje de ${carnet.userId}`);
-    } catch (e) {
-      console.error(`Error borrando mensaje ${carnet.mensajeId}:`, e.message);
-    }
-  }
-  
-  // Reenviar en orden
-  const nuevoData = {};
-  let totalEnviados = 0;
-  
-  for (const catId of CATEGORIA_ORDEN) {
-    const lista = porCategoria[catId];
-    if (lista.length === 0) continue;
-    
-    const nombreRol = ROLES_CARNETS[catId];
-    let primera = true;
-    
-    for (const carnet of lista) {
-      let content;
-      if (primera) {
-        content = `# ${nombreRol}\n<<@${carnet.userId}>`;
-        primera = false;
-      } else {
-        content = `<<@${carnet.userId}>`;
-      }
+      // Buscar a qué usuario pertenece
+      const entry = Object.entries(data).find(([userId, info]) => info.mensajeId === msg.id);
+      if (!entry) continue;
       
-      try {
-        console.log(`Enviando carnet de ${carnet.userId} en ${nombreRol}...`);
-        const nuevoMsg = await canal.send({
-          content: content,
-          files: [carnet.imagen]
-        });
-        
-        console.log(`✅ Enviado: ${nuevoMsg.id}`);
-        
-        nuevoData[carnet.userId] = {
-          categoria: carnet.categoria,
-          categoriaNombre: carnet.categoriaNombre,
-          imagen: carnet.imagen,
-          mensajeId: nuevoMsg.id,
-          fecha: carnet.fecha
-        };
-        totalEnviados++;
-      } catch (err) {
-        console.error(`❌ Error enviando carnet de ${carnet.userId}:`, err.message);
+      const info = entry[1];
+      if (info.categoria === categoriaId) {
+        ultimoMsg = msg;
+        esPrimera = false;
       }
     }
+    
+    return { ultimoMsg, esPrimera };
+  } catch (err) {
+    console.error('Error buscando categoría:', err);
+    return { ultimoMsg: null, esPrimera: true };
   }
-  
-  console.log(`Total enviados: ${totalEnviados}`);
-  
-  // Actualizar data.json
-  for (const [userId, info] of Object.entries(nuevoData)) {
-    data[userId] = info;
-  }
-  
-  // Limpiar usuarios que ya no están
-  for (const userId of Object.keys(data)) {
-    if (!nuevoData[userId]) delete data[userId];
-  }
-  
-  saveData(data);
-  console.log('=== REORGANIZACIÓN COMPLETADA ===');
-  return nuevoData;
 }
 
 // ===== COMANDOS =====
@@ -240,7 +153,7 @@ const commands = [
     .setName('mycarnet')
     .setDescription('Ver tu carnet registrado'),
   new SlashCommandBuilder()
-    .setName('reorganizarcarnets')
+    .setName('organizar')
     .setDescription('Reorganizar todo el canal de carnets (admin)')
 ].map(cmd => cmd.toJSON());
 
@@ -275,7 +188,7 @@ client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   try {
-    const data = loadData();
+    let data = loadData();
     const userId = interaction.user.id;
 
     // ===== /CARNET =====
@@ -299,29 +212,59 @@ client.on('interactionCreate', async interaction => {
       const canal = await client.channels.fetch(CANAL_CARNETS);
       if (!canal) return interaction.editReply({ content: '❌ No se encontró el canal.' });
 
-      // Si ya tiene carnet, eliminarlo primero
+      // Si ya tiene carnet, eliminarlo
       if (data[usuario.id]) {
-        const msgOld = await canal.messages.fetch(data[usuario.id].mensajeId).catch(() => null);
-        if (msgOld) await msgOld.delete().catch(() => {});
+        try {
+          const msgOld = await canal.messages.fetch(data[usuario.id].mensajeId);
+          await msgOld.delete();
+        } catch (e) {
+          console.log('No se pudo borrar carnet anterior:', e.message);
+        }
         delete data[usuario.id];
         saveData(data);
       }
 
-      // Agregar el nuevo carnet a data temporalmente
+      // Buscar dónde poner el nuevo carnet
+      const { ultimoMsg, esPrimera } = await encontrarUltimoDeCategoria(canal, categoria, data);
+
+      // Preparar contenido
+      let content;
+      if (esPrimera) {
+        content = `# ${ROLES_CARNETS[categoria]}\n<<@${usuario.id}>`;
+      } else {
+        content = `<<@${usuario.id}>`;
+      }
+
+      // Enviar mensaje
+      let msg;
+      if (ultimoMsg) {
+        // Responder al último mensaje de esa categoría (aparece justo debajo)
+        msg = await ultimoMsg.reply({
+          content: content,
+          files: [imagen.url],
+          allowedMentions: { parse: [] }
+        });
+      } else {
+        // Primera vez que se envía esta categoría
+        msg = await canal.send({
+          content: content,
+          files: [imagen.url],
+          allowedMentions: { parse: [] }
+        });
+      }
+
+      // Guardar en data.json
       data[usuario.id] = {
         categoria,
         categoriaNombre: ROLES_CARNETS[categoria],
         imagen: imagen.url,
-        mensajeId: 'temp',
+        mensajeId: msg.id,
         fecha: new Date().toISOString()
       };
       saveData(data);
 
-      // Reorganizar TODO el canal para mantener orden por categoría
-      await reorganizarCanal(canal);
-
       return interaction.editReply({ 
-        content: `✅ Carnet de **${ROLES_CARNETS[categoria]}** subido para <@${usuario.id}>.\n📋 Canal reorganizado por categorías.`, 
+        content: `✅ Carnet de **${ROLES_CARNETS[categoria]}** subido para <@${usuario.id}>.`, 
         flags: MessageFlags.Ephemeral 
       });
     }
@@ -350,27 +293,52 @@ client.on('interactionCreate', async interaction => {
 
       // Si ya tiene carnet, eliminarlo
       if (data[usuario.id]) {
-        const msgOld = await canal.messages.fetch(data[usuario.id].mensajeId).catch(() => null);
-        if (msgOld) await msgOld.delete().catch(() => {});
+        try {
+          const msgOld = await canal.messages.fetch(data[usuario.id].mensajeId);
+          await msgOld.delete();
+        } catch (e) {
+          console.log('No se pudo borrar carnet anterior:', e.message);
+        }
         delete data[usuario.id];
         saveData(data);
       }
 
-      // Agregar temporalmente
+      // Buscar dónde poner el nuevo carnet
+      const { ultimoMsg, esPrimera } = await encontrarUltimoDeCategoria(canal, categoria, data);
+
+      let content;
+      if (esPrimera) {
+        content = `# ${ROLES_CARNETS[categoria]}\n<<@${usuario.id}>`;
+      } else {
+        content = `<<@${usuario.id}>`;
+      }
+
+      let msg;
+      if (ultimoMsg) {
+        msg = await ultimoMsg.reply({
+          content: content,
+          files: [imagen.url],
+          allowedMentions: { parse: [] }
+        });
+      } else {
+        msg = await canal.send({
+          content: content,
+          files: [imagen.url],
+          allowedMentions: { parse: [] }
+        });
+      }
+
       data[usuario.id] = {
         categoria,
         categoriaNombre: ROLES_CARNETS[categoria],
         imagen: imagen.url,
-        mensajeId: 'temp',
+        mensajeId: msg.id,
         fecha: new Date().toISOString()
       };
       saveData(data);
 
-      // Reorganizar todo
-      await reorganizarCanal(canal);
-
       return interaction.editReply({ 
-        content: `✅ Carnet agregado para <@${usuario.id}>.\n📋 Canal reorganizado por categorías.`, 
+        content: `✅ Carnet agregado para <@${usuario.id}>.`, 
         flags: MessageFlags.Ephemeral 
       });
     }
@@ -394,36 +362,109 @@ client.on('interactionCreate', async interaction => {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const canal = await client.channels.fetch(CANAL_CARNETS);
 
-      // Borrar el mensaje del carnet
-      const msgOld = await canal.messages.fetch(data[usuario.id].mensajeId).catch(() => null);
-      if (msgOld) await msgOld.delete().catch(() => {});
+      try {
+        const msgOld = await canal.messages.fetch(data[usuario.id].mensajeId);
+        await msgOld.delete();
+      } catch (e) {
+        console.log('No se pudo borrar mensaje:', e.message);
+      }
 
-      // Eliminar de data
       delete data[usuario.id];
       saveData(data);
 
-      // Reorganizar todo el canal
-      await reorganizarCanal(canal);
-
       return interaction.editReply({ 
-        content: `✅ Carnet de <@${usuario.id}> eliminado.\n📋 Canal reorganizado por categorías.`, 
+        content: `✅ Carnet de <@${usuario.id}> eliminado. Usa \`/organizar\` si necesitas reordenar.`, 
         flags: MessageFlags.Ephemeral 
       });
     }
 
-    // ===== /REORGANIZARCARNETS =====
-    if (interaction.commandName === 'reorganizarcarnets') {
+    // ===== /ORGANIZAR =====
+    if (interaction.commandName === 'organizar') {
       if (!interaction.member.roles.cache.some(r => ROLES_ADMIN.includes(r.id))) {
         return safeReply(interaction, { content: '❌ Acceso denegado.', flags: MessageFlags.Ephemeral });
       }
 
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const canal = await client.channels.fetch(CANAL_CARNETS);
+
+      // Obtener todos los carnets del canal
+      const mensajes = await canal.messages.fetch({ limit: 100 });
+      const msgsArray = Array.from(mensajes.values()).reverse();
       
-      await reorganizarCanal(canal);
+      const carnets = [];
+      for (const msg of msgsArray) {
+        if (msg.attachments.size === 0) continue;
+        const entry = Object.entries(data).find(([uid, info]) => info.mensajeId === msg.id);
+        if (entry) {
+          carnets.push({
+            userId: entry[0],
+            ...entry[1],
+            msg: msg
+          });
+        }
+      }
+
+      console.log(`Organizando ${carnets.length} carnets...`);
+
+      // Borrar todos
+      for (const c of carnets) {
+        try {
+          await c.msg.delete();
+          console.log(`Borrado: ${c.userId}`);
+        } catch (e) {
+          console.error(`Error borrando ${c.userId}:`, e.message);
+        }
+      }
+
+      // Reenviar en orden por categoría
+      const nuevoData = {};
+      
+      for (const catId of CATEGORIA_ORDEN) {
+        const lista = carnets.filter(c => c.categoria === catId);
+        if (lista.length === 0) continue;
+
+        let primera = true;
+        for (const c of lista) {
+          let content;
+          if (primera) {
+            content = `# ${ROLES_CARNETS[catId]}\n<<@${c.userId}>`;
+            primera = false;
+          } else {
+            content = `<<@${c.userId}>`;
+          }
+
+          try {
+            const nuevoMsg = await canal.send({
+              content: content,
+              files: [c.imagen],
+              allowedMentions: { parse: [] }
+            });
+            
+            nuevoData[c.userId] = {
+              categoria: c.categoria,
+              categoriaNombre: c.categoriaNombre,
+              imagen: c.imagen,
+              mensajeId: nuevoMsg.id,
+              fecha: c.fecha
+            };
+            console.log(`✅ Reenviado: ${c.userId}`);
+          } catch (e) {
+            console.error(`❌ Error reenviando ${c.userId}:`, e.message);
+          }
+        }
+      }
+
+      // Actualizar data.json
+      for (const [uid, info] of Object.entries(nuevoData)) {
+        data[uid] = info;
+      }
+      for (const uid of Object.keys(data)) {
+        if (!nuevoData[uid]) delete data[uid];
+      }
+      saveData(data);
 
       return interaction.editReply({ 
-        content: '✅ Canal de carnets reorganizado completamente.', 
+        content: `✅ Canal organizado. ${Object.keys(nuevoData).length} carnets reubicados.`, 
         flags: MessageFlags.Ephemeral 
       });
     }
