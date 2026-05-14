@@ -79,7 +79,7 @@ async function reubicarCarnets(canal) {
 const commands = [
   new SlashCommandBuilder()
     .setName('carnet')
-    .setDescription('Subir carnet militar (propio o de otro usuario)')
+    .setDescription('Subir carnet militar')
     .addAttachmentOption(option =>
       option.setName('imagen')
         .setDescription('Imagen del carnet')
@@ -99,8 +99,8 @@ const commands = [
     )
     .addUserOption(option =>
       option.setName('usuario')
-        .setDescription('Usuario al que asignar el carnet (opcional, por defecto: tú)')
-        .setRequired(false)
+        .setDescription('Usuario del carnet')
+        .setRequired(true)
     ),
   new SlashCommandBuilder()
     .setName('ingreso')
@@ -162,27 +162,18 @@ client.on('interactionCreate', async interaction => {
     if (interaction.commandName === 'carnet') {
       const imagen = interaction.options.getAttachment('imagen');
       const categoria = interaction.options.getString('categoria');
-      const usuarioTarget = interaction.options.getUser('usuario');
-      
-      // Determinar usuario objetivo
-      const targetUser = usuarioTarget || interaction.user;
-      const isAdmin = interaction.member.roles.cache.some(r => ROLES_ADMIN.includes(r.id));
-      
-      // Si intenta poner carnet a otro sin ser admin, denegar
-      if (usuarioTarget && usuarioTarget.id !== interaction.user.id && !isAdmin) {
-        return safeReply(interaction, { content: 'Solo admins pueden subir carnets de otros usuarios.', flags: MessageFlags.Ephemeral });
-      }
+      const usuario = interaction.options.getUser('usuario');
 
       if (!imagen.contentType.startsWith('image')) {
         return safeReply(interaction, { content: 'Debes subir una imagen válida.', flags: MessageFlags.Ephemeral });
       }
 
       // Si ya tiene carnet, eliminar el anterior
-      if (data[targetUser.id]) {
+      if (data[usuario.id]) {
         const canal = await client.channels.fetch(CANAL_CARNETS);
-        const msgOld = await canal.messages.fetch(data[targetUser.id].mensajeId).catch(() => null);
+        const msgOld = await canal.messages.fetch(data[usuario.id].mensajeId).catch(() => null);
         if (msgOld) await msgOld.delete().catch(() => {});
-        delete data[targetUser.id];
+        delete data[usuario.id];
       }
 
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -191,12 +182,12 @@ client.on('interactionCreate', async interaction => {
 
       // Subir mensaje con nombre de rol y tag del usuario
       const msg = await canal.send({
-        content: `# ${ROLES_CARNETS[categoria]}\n<<@${targetUser.id}>`,
+        content: `# ${ROLES_CARNETS[categoria]}\n<<@${usuario.id}>`,
         files: [imagen.url]
       });
 
       // Guardar info en data.json
-      data[targetUser.id] = {
+      data[usuario.id] = {
         categoria,
         categoriaNombre: ROLES_CARNETS[categoria],
         imagen: imagen.url,
@@ -205,10 +196,7 @@ client.on('interactionCreate', async interaction => {
       };
       saveData(data);
 
-      const msgContent = usuarioTarget 
-        ? `Carnet subido correctamente para ${targetUser.username}.`
-        : 'Carnet subido correctamente.';
-      return interaction.editReply({ content: msgContent, flags: MessageFlags.Ephemeral });
+      return interaction.editReply({ content: `Carnet subido correctamente para ${usuario.username}.`, flags: MessageFlags.Ephemeral });
     }
 
     // ===== /INGRESO =====
