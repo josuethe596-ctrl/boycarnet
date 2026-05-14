@@ -145,9 +145,16 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 client.once('clientReady', async () => {
   console.log(`Bot iniciado: ${client.user.tag}`);
   try {
+    // Borrar comandos globales primero para forzar actualización
+    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: [] });
+    console.log('Comandos globales borrados');
+    
+    // Registrar comandos nuevos
     await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
     console.log('Comandos registrados globalmente correctamente');
-  } catch (err) { console.error('ERROR REGISTRANDO COMANDOS:', err); }
+  } catch (err) { 
+    console.error('ERROR REGISTRANDO COMANDOS:', err); 
+  }
 });
 
 // ===== INTERACCIONES =====
@@ -164,7 +171,15 @@ client.on('interactionCreate', async interaction => {
       const categoria = interaction.options.getString('categoria');
       const usuario = interaction.options.getUser('usuario');
 
-      if (!imagen.contentType.startsWith('image')) {
+      // Validación defensiva - por si acaso el usuario es null
+      if (!usuario) {
+        return safeReply(interaction, { 
+          content: '❌ Debes especificar un usuario. Uso: `/carnet imagen:[archivo] categoria:[rol] usuario:@nombre`', 
+          flags: MessageFlags.Ephemeral 
+        });
+      }
+
+      if (!imagen || !imagen.contentType || !imagen.contentType.startsWith('image')) {
         return safeReply(interaction, { content: 'Debes subir una imagen válida.', flags: MessageFlags.Ephemeral });
       }
 
@@ -196,7 +211,7 @@ client.on('interactionCreate', async interaction => {
       };
       saveData(data);
 
-      return interaction.editReply({ content: `Carnet subido correctamente para ${usuario.username}.`, flags: MessageFlags.Ephemeral });
+      return interaction.editReply({ content: `✅ Carnet subido correctamente para ${usuario.username}.`, flags: MessageFlags.Ephemeral });
     }
 
     // ===== /INGRESO =====
@@ -209,7 +224,11 @@ client.on('interactionCreate', async interaction => {
       const imagen = interaction.options.getAttachment('imagen');
       const categoria = interaction.options.getString('categoria');
 
-      if (!imagen.contentType.startsWith('image')) {
+      if (!usuario) {
+        return safeReply(interaction, { content: '❌ Debes especificar un usuario.', flags: MessageFlags.Ephemeral });
+      }
+
+      if (!imagen || !imagen.contentType || !imagen.contentType.startsWith('image')) {
         return safeReply(interaction, { content: 'Debes subir una imagen válida.', flags: MessageFlags.Ephemeral });
       }
 
@@ -239,7 +258,7 @@ client.on('interactionCreate', async interaction => {
       };
       saveData(data);
 
-      return interaction.editReply({ content: `Carnet agregado para ${usuario.username}.`, flags: MessageFlags.Ephemeral });
+      return interaction.editReply({ content: `✅ Carnet agregado para ${usuario.username}.`, flags: MessageFlags.Ephemeral });
     }
 
     // ===== /BAJA =====
@@ -249,6 +268,10 @@ client.on('interactionCreate', async interaction => {
       }
 
       const usuario = interaction.options.getUser('usuario');
+
+      if (!usuario) {
+        return safeReply(interaction, { content: '❌ Debes especificar un usuario.', flags: MessageFlags.Ephemeral });
+      }
 
       if (!data[usuario.id]) {
         return safeReply(interaction, { content: 'Este usuario no tiene carnet registrado.', flags: MessageFlags.Ephemeral });
@@ -265,7 +288,7 @@ client.on('interactionCreate', async interaction => {
       saveData(data);
       await reubicarCarnets(canal);
 
-      return safeReply(interaction, { content: `Carnet de ${usuario.username} eliminado correctamente.`, flags: MessageFlags.Ephemeral });
+      return safeReply(interaction, { content: `✅ Carnet de ${usuario.username} eliminado correctamente.`, flags: MessageFlags.Ephemeral });
     }
 
     // ===== /MYCARNET =====
@@ -281,11 +304,11 @@ client.on('interactionCreate', async interaction => {
     }
 
   } catch (err) {
-    console.error(err);
+    console.error('Error en interacción:', err);
     try {
-      if (interaction.deferred) await interaction.editReply({ content: 'Ocurrió un error.', flags: MessageFlags.Ephemeral });
-      else if (interaction.replied) await interaction.followUp({ content: 'Ocurrió un error.', flags: MessageFlags.Ephemeral });
-      else await interaction.reply({ content: 'Ocurrió un error.', flags: MessageFlags.Ephemeral });
+      if (interaction.deferred) await interaction.editReply({ content: '❌ Ocurrió un error.', flags: MessageFlags.Ephemeral });
+      else if (interaction.replied) await interaction.followUp({ content: '❌ Ocurrió un error.', flags: MessageFlags.Ephemeral });
+      else await interaction.reply({ content: '❌ Ocurrió un error.', flags: MessageFlags.Ephemeral });
     } catch {}
   }
 });
