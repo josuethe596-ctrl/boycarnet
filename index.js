@@ -19,63 +19,28 @@ const client = new Client({
 // ===== CONFIG =====
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = '1503744068134637750';
-const CANAL_CARNETS = '1444812609441501275';
+const CANAL_MATRICULAS = '1249106306162233405';
 const GUILD_IDS = ['1123790874741047356', '1464318287683780836'];
 
-// ===== ROLES / SECCIONES =====
-const ROLES_CARNETS = {
-  '1249081905631203419': 'Commissioned Officers',
-  '1465107741550051369': 'Warrant Officers',
-  '1249072506850246819': 'Staff Non-Commissioned Officers',
-  '1249076967156875265': 'Non-Commissioned Officers',
-  '1249080467198836787': 'Junior Enlisted'
-};
-
-const CATEGORIA_ORDEN = [
-  '1249081905631203419',
-  '1465107741550051369',
-  '1249072506850246819',
-  '1249076967156875265',
-  '1249080467198836787'
+// ===== ROLES DE RANGO =====
+const ROLES_RANGO = [
+  '1249070554330169456',  // LTC
+  '1249071682476314716',  // MAJ
+  '1249072078435385354',  // CPT
+  '1249072776480952430',  // FLT
+  '1249073570932330647',  // SLT
+  '1465109878744940667',  // WO-02
+  '1249074305438978150',  // WO-01
+  '1465108847633895456',  // MS
+  '1249075344410153061',  // GS
+  '1249076492147626044',  // SS
+  '1249076802312212500',  // SGT
+  '1249077129384165450',  // CPL
+  '1249078185077772409',  // LCPL
+  '1249078391530061855',  // PFC
+  '1249078539135877169'   // PVT
 ];
 
-// ===== ORDEN DE RANGOS (de más alto a más bajo) =====
-// #	Rango	ID
-// 1	LTC	1249070554330169456
-// 2	MAJ	1249071682476314716
-// 3	CPT	1249072078435385354
-// 4	FLT	1249072776480952430
-// 5	SLT	1249073570932330647
-// 6	WO-02	1465109878744940667
-// 7	WO-01	1249074305438978150
-// 8	MS	1465108847633895456
-// 9	GS	1249075344410153061
-// 10	SS	1249076492147626044
-// 11	SGT	1249076802312212500
-// 12	CPL	1249077129384165450
-// 13	LCPL	1249078185077772409
-// 14	PFC	1249078391530061855
-// 15	PVT	1249078539135877169
-
-const RANGO_ORDEN = [
-  '1249070554330169456',  // 1. LTC
-  '1249071682476314716',  // 2. MAJ
-  '1249072078435385354',  // 3. CPT
-  '1249072776480952430',  // 4. FLT
-  '1249073570932330647',  // 5. SLT
-  '1465109878744940667',  // 6. WO-02
-  '1249074305438978150',  // 7. WO-01
-  '1465108847633895456',  // 8. MS
-  '1249075344410153061',  // 9. GS
-  '1249076492147626044',  // 10. SS
-  '1249076802312212500',  // 11. SGT
-  '1249077129384165450',  // 12. CPL
-  '1249078185077772409',  // 13. LCPL
-  '1249078391530061855',  // 14. PFC
-  '1249078539135877169'   // 15. PVT
-];
-
-// Nombres de rangos
 const RANGO_NOMBRES = {
   '1249070554330169456': 'LTC',
   '1249071682476314716': 'MAJ',
@@ -98,10 +63,14 @@ const RANGO_NOMBRES = {
 const ROLES_ADMIN = ['1249089576270698452','1249089640632422470'];
 
 // ===== DATA =====
-const DATA_FILE = './data.json';
+const DATA_FILE = './matriculas.json';
 function loadData() {
   try { return JSON.parse(fs.readFileSync(DATA_FILE)); } 
-  catch { fs.writeFileSync(DATA_FILE, '{}'); return {}; }
+  catch { 
+    const defaultData = {ala1:{},ala2:{}};
+    fs.writeFileSync(DATA_FILE, JSON.stringify(defaultData));
+    return defaultData; 
+  }
 }
 function saveData(data) { fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2)); }
 
@@ -117,84 +86,187 @@ async function safeReply(interaction, options) {
 // ===== OBTENER RANGO DE UN USUARIO =====
 function obtenerRangoUsuario(member) {
   if (!member || !member.roles) return null;
-  for (const rangoId of RANGO_ORDEN) {
+  for (const rangoId of ROLES_RANGO) {
     if (member.roles.cache.has(rangoId)) return rangoId;
   }
   return null;
 }
 
-// ===== POSICIÓN DEL RANGO =====
-function obtenerPosicionRango(rangoId) {
-  const pos = RANGO_ORDEN.indexOf(rangoId);
-  return pos === -1 ? 999 : pos;
+// ===== GENERAR TEXTO DE LA LISTA =====
+async function generarListaTexto(guild, data) {
+  let texto = `Lista de callsigns para los miembros de la facción.\nLights Armored Vehicles (LAV)\n\n`;
+  
+  // Procesar ambas alas
+  for (const alaKey of ['ala1', 'ala2']) {
+    const alaData = data[alaKey];
+    const alaNombre = alaKey === 'ala1' ? 'Ala Primera' : 'Ala Segunda';
+    
+    if (Object.keys(alaData).length === 0) continue;
+    
+    texto += `═══ ${alaNombre} ═══\n\n`;
+    
+    // Separar cúpula (01-06) y soldados (07+)
+    const cupula = [];
+    const soldados = [];
+    
+    for (const [numero, info] of Object.entries(alaData)) {
+      const num = parseInt(numero);
+      if (num <= 6) {
+        cupula.push({ numero, ...info });
+      } else {
+        soldados.push({ numero, ...info });
+      }
+    }
+    
+    // Ordenar por número
+    cupula.sort((a, b) => parseInt(a.numero) - parseInt(b.numero));
+    soldados.sort((a, b) => parseInt(a.numero) - parseInt(b.numero));
+    
+    // CÚPULA
+    if (cupula.length > 0) {
+      texto += `Miembros de la cúpula:\n\n`;
+      
+      for (const m of cupula) {
+        const member = await guild.members.fetch(m.userId).catch(() => null);
+        const rangoId = obtenerRangoUsuario(member);
+        
+        if (rangoId) {
+          texto += `<@&${rangoId}>\n\n`;
+        } else {
+          texto += `\n`;
+        }
+        
+        const discordName = member ? member.user.username : 'Usuario desconocido';
+        texto += `LAV-${m.numero.padStart(2, '0')} ${discordName}\n\n`;
+      }
+    }
+    
+    // SOLDADOS
+    if (soldados.length > 0) {
+      texto += `Miembros soldados:\n\n`;
+      
+      for (const m of soldados) {
+        const member = await guild.members.fetch(m.userId).catch(() => null);
+        const rangoId = obtenerRangoUsuario(member);
+        
+        if (rangoId) {
+          texto += `<@&${rangoId}>\n\n`;
+        } else {
+          texto += `\n`;
+        }
+        
+        const discordName = member ? member.user.username : 'Usuario desconocido';
+        texto += `LAV-${m.numero.padStart(2, '0')} ${discordName}\n\n`;
+      }
+    }
+    
+    texto += `\n`;
+  }
+  
+  return texto;
+}
+
+// ===== ACTUALIZAR MENSAJE EN CANAL =====
+async function actualizarMensajeMatriculas(canal, guild, data) {
+  try {
+    // Buscar mensaje existente
+    const mensajes = await canal.messages.fetch({ limit: 20 });
+    let msgExistente = null;
+    
+    for (const [msgId, msg] of mensajes) {
+      if (msg.author.id === CLIENT_ID && msg.content.includes('Lista de callsigns')) {
+        msgExistente = msg;
+        break;
+      }
+    }
+    
+    // Generar texto
+    const texto = await generarListaTexto(guild, data);
+    
+    if (msgExistente) {
+      await msgExistente.edit(texto);
+      console.log('Mensaje de matrículas actualizado');
+      return msgExistente.id;
+    } else {
+      const nuevoMsg = await canal.send(texto);
+      console.log('Nuevo mensaje de matrículas creado');
+      return nuevoMsg.id;
+    }
+  } catch (err) {
+    console.error('Error actualizando matrículas:', err);
+    return null;
+  }
 }
 
 // ===== COMANDOS =====
 const commands = [
   new SlashCommandBuilder()
-    .setName('carnet')
-    .setDescription('Subir carnet militar de un usuario')
-    .addAttachmentOption(option =>
-      option.setName('imagen')
-        .setDescription('Imagen del carnet')
+    .setName('matricula')
+    .setDescription('Asignar matrícula LAV a un usuario')
+    .addStringOption(option =>
+      option.setName('numero')
+        .setDescription('Número de matrícula (01-33)')
+        .setRequired(true)
+    )
+    .addUserOption(option =>
+      option.setName('usuario')
+        .setDescription('Usuario a asignar')
         .setRequired(true)
     )
     .addStringOption(option =>
-      option.setName('categoria')
-        .setDescription('Selecciona la categoria del carnet')
+      option.setName('ala')
+        .setDescription('Ala/Regimiento')
         .setRequired(true)
         .addChoices(
-          { name: 'Commissioned Officers', value: '1249081905631203419' },
-          { name: 'Warrant Officers', value: '1465107741550051369' },
-          { name: 'Staff Non-Commissioned Officers', value: '1249072506850246819' },
-          { name: 'Non-Commissioned Officers', value: '1249076967156875265' },
-          { name: 'Junior Enlisted', value: '1249080467198836787' }
+          { name: 'Ala 1', value: 'ala1' },
+          { name: 'Ala 2', value: 'ala2' }
         )
-    )
-    .addUserOption(option =>
-      option.setName('usuario')
-        .setDescription('Usuario al que pertenece el carnet')
-        .setRequired(true)
     ),
   new SlashCommandBuilder()
-    .setName('ingreso')
-    .setDescription('Agregar carnet de un usuario (admin)')
+    .setName('quitarmatricula')
+    .setDescription('Quitar matrícula a un usuario (admin)')
     .addUserOption(option =>
       option.setName('usuario')
-        .setDescription('Usuario al que asignar el carnet')
-        .setRequired(true)
-    )
-    .addAttachmentOption(option =>
-      option.setName('imagen')
-        .setDescription('Imagen del carnet')
+        .setDescription('Usuario a quitar')
         .setRequired(true)
     )
     .addStringOption(option =>
-      option.setName('categoria')
-        .setDescription('Selecciona la categoria del carnet')
+      option.setName('ala')
+        .setDescription('Ala/Regimiento')
         .setRequired(true)
         .addChoices(
-          { name: 'Commissioned Officers', value: '1249081905631203419' },
-          { name: 'Warrant Officers', value: '1465107741550051369' },
-          { name: 'Staff Non-Commissioned Officers', value: '1249072506850246819' },
-          { name: 'Non-Commissioned Officers', value: '1249076967156875265' },
-          { name: 'Junior Enlisted', value: '1249080467198836787' }
+          { name: 'Ala 1', value: 'ala1' },
+          { name: 'Ala 2', value: 'ala2' }
         )
     ),
   new SlashCommandBuilder()
-    .setName('baja')
-    .setDescription('Eliminar el carnet de un usuario (admin)')
+    .setName('cambiarmatricula')
+    .setDescription('Cambiar número de matrícula (admin)')
     .addUserOption(option =>
       option.setName('usuario')
-        .setDescription('Usuario al que quitar el carnet')
+        .setDescription('Usuario a cambiar')
         .setRequired(true)
+    )
+    .addStringOption(option =>
+      option.setName('nuevo_numero')
+        .setDescription('Nuevo número')
+        .setRequired(true)
+    )
+    .addStringOption(option =>
+      option.setName('ala')
+        .setDescription('Ala/Regimiento')
+        .setRequired(true)
+        .addChoices(
+          { name: 'Ala 1', value: 'ala1' },
+          { name: 'Ala 2', value: 'ala2' }
+        )
     ),
   new SlashCommandBuilder()
-    .setName('mycarnet')
-    .setDescription('Ver tu carnet registrado'),
+    .setName('listamatriculas')
+    .setDescription('Ver lista de matrículas'),
   new SlashCommandBuilder()
-    .setName('organizar')
-    .setDescription('Reorganizar carnets por rango (admin)')
+    .setName('mimatricula')
+    .setDescription('Ver tu matrícula')
 ].map(cmd => cmd.toJSON());
 
 // ===== REGISTRAR COMANDOS =====
@@ -203,7 +275,6 @@ client.once('clientReady', async () => {
   console.log(`Bot iniciado: ${client.user.tag}`);
   try {
     await rest.put(Routes.applicationCommands(CLIENT_ID), { body: [] });
-    console.log('Comandos globales borrados');
     
     for (const guildId of GUILD_IDS) {
       try {
@@ -216,8 +287,6 @@ client.once('clientReady', async () => {
         console.error(`Error en guild ${guildId}:`, guildErr.message);
       }
     }
-    
-    console.log('Registro de comandos completado');
   } catch (err) { 
     console.error('ERROR REGISTRANDO COMANDOS:', err); 
   }
@@ -228,337 +297,197 @@ client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   try {
-    let data = loadData();
+    const data = loadData();
     const userId = interaction.user.id;
 
-    // ===== /CARNET =====
-    if (interaction.commandName === 'carnet') {
-      const imagen = interaction.options.getAttachment('imagen');
-      const categoria = interaction.options.getString('categoria');
+    // ===== /MATRICULA =====
+    if (interaction.commandName === 'matricula') {
+      const numero = interaction.options.getString('numero').padStart(2, '0');
       const usuario = interaction.options.getUser('usuario');
+      const ala = interaction.options.getString('ala');
 
       if (!usuario) {
-        return safeReply(interaction, { 
-          content: '❌ Error: No se pudo obtener el usuario.', 
+        return safeReply(interaction, { content: '❌ Usuario no válido.', flags: MessageFlags.Ephemeral });
+      }
+
+      // Validar número
+      const numInt = parseInt(numero);
+      if (isNaN(numInt) || numInt < 1 || numInt > 33) {
+        return safeReply(interaction, { content: '❌ Número debe ser entre 01 y 33.', flags: MessageFlags.Ephemeral });
+      }
+
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+      // Verificar si número ya está ocupado
+      if (data[ala][numero]) {
+        return interaction.editReply({ 
+          content: `❌ El número ${numero} ya está asignado a <@${data[ala][numero].userId}>.`, 
           flags: MessageFlags.Ephemeral 
         });
       }
 
-      if (!imagen || !imagen.contentType || !imagen.contentType.startsWith('image')) {
-        return safeReply(interaction, { content: '❌ Debes subir una imagen válida.', flags: MessageFlags.Ephemeral });
+      // Verificar si usuario ya tiene matrícula en esta ala
+      const existente = Object.entries(data[ala]).find(([n, info]) => info.userId === usuario.id);
+      if (existente) {
+        delete data[ala][existente[0]];
       }
 
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-      const canal = await client.channels.fetch(CANAL_CARNETS);
-      if (!canal) return interaction.editReply({ content: '❌ No se encontró el canal.' });
-
-      const member = await interaction.guild.members.fetch(usuario.id).catch(() => null);
-      const rangoId = obtenerRangoUsuario(member);
-
-      if (data[usuario.id]) {
-        try {
-          const msgOld = await canal.messages.fetch(data[usuario.id].mensajeId);
-          await msgOld.delete();
-        } catch (e) {
-          console.log('No se pudo borrar carnet anterior:', e.message);
-        }
-        delete data[usuario.id];
-        saveData(data);
-      }
-
-      const mensajes = await canal.messages.fetch({ limit: 100 });
-      let ultimoMsgCategoria = null;
-      let hayCategoria = false;
-      
-      for (const [msgId, msg] of mensajes) {
-        if (msg.attachments.size === 0) continue;
-        const entry = Object.entries(data).find(([uid, info]) => info.mensajeId === msgId);
-        if (entry && entry[1].categoria === categoria) {
-          hayCategoria = true;
-          ultimoMsgCategoria = msg;
-        }
-      }
-
-      let content;
-      if (!hayCategoria) {
-        content = `# ${ROLES_CARNETS[categoria]}\n<<@${usuario.id}>`;
-      } else {
-        content = `<<@${usuario.id}>`;
-      }
-
-      let msg;
-      if (ultimoMsgCategoria) {
-        msg = await ultimoMsgCategoria.reply({
-          content: content,
-          files: [imagen.url],
-          allowedMentions: { parse: [] }
-        });
-      } else {
-        msg = await canal.send({
-          content: content,
-          files: [imagen.url],
-          allowedMentions: { parse: [] }
-        });
-      }
-
-      data[usuario.id] = {
-        categoria,
-        categoriaNombre: ROLES_CARNETS[categoria],
-        rangoId: rangoId,
-        imagen: imagen.url,
-        mensajeId: msg.id,
+      // Asignar
+      data[ala][numero] = {
+        userId: usuario.id,
         fecha: new Date().toISOString()
       };
       saveData(data);
 
-      const rangoNombre = rangoId ? RANGO_NOMBRES[rangoId] : 'Sin rango';
+      // Actualizar mensaje en canal
+      const canal = await client.channels.fetch(CANAL_MATRICULAS);
+      await actualizarMensajeMatriculas(canal, interaction.guild, data);
+
+      const tipo = numInt <= 6 ? 'cúpula' : 'soldado';
       
       return interaction.editReply({ 
-        content: `✅ Carnet de **${ROLES_CARNETS[categoria]}** subido para <@${usuario.id}>.\n🎖️ Rango detectado: **${rangoNombre}**\n💡 Usa \`/organizar\` para ordenar por rango.`, 
+        content: `✅ Matrícula **LAV-${numero}** asignada a <@${usuario.id}> (${tipo}).\n📋 Lista actualizada en <#${CANAL_MATRICULAS}>.`, 
         flags: MessageFlags.Ephemeral 
       });
     }
 
-    // ===== /INGRESO =====
-    if (interaction.commandName === 'ingreso') {
+    // ===== /QUITARMATRICULA =====
+    if (interaction.commandName === 'quitarmatricula') {
       if (!interaction.member.roles.cache.some(r => ROLES_ADMIN.includes(r.id))) {
         return safeReply(interaction, { content: '❌ Acceso denegado.', flags: MessageFlags.Ephemeral });
       }
 
       const usuario = interaction.options.getUser('usuario');
-      const imagen = interaction.options.getAttachment('imagen');
-      const categoria = interaction.options.getString('categoria');
-
-      if (!usuario) {
-        return safeReply(interaction, { content: '❌ Debes especificar un usuario.', flags: MessageFlags.Ephemeral });
-      }
-
-      if (!imagen || !imagen.contentType || !imagen.contentType.startsWith('image')) {
-        return safeReply(interaction, { content: '❌ Debes subir una imagen válida.', flags: MessageFlags.Ephemeral });
-      }
+      const ala = interaction.options.getString('ala');
 
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-      const canal = await client.channels.fetch(CANAL_CARNETS);
-      if (!canal) return interaction.editReply({ content: '❌ No se encontró el canal.' });
 
-      const member = await interaction.guild.members.fetch(usuario.id).catch(() => null);
-      const rangoId = obtenerRangoUsuario(member);
-
-      if (data[usuario.id]) {
-        try {
-          const msgOld = await canal.messages.fetch(data[usuario.id].mensajeId);
-          await msgOld.delete();
-        } catch (e) {
-          console.log('No se pudo borrar carnet anterior:', e.message);
-        }
-        delete data[usuario.id];
-        saveData(data);
-      }
-
-      const mensajes = await canal.messages.fetch({ limit: 100 });
-      let ultimoMsgCategoria = null;
-      let hayCategoria = false;
-      
-      for (const [msgId, msg] of mensajes) {
-        if (msg.attachments.size === 0) continue;
-        const entry = Object.entries(data).find(([uid, info]) => info.mensajeId === msgId);
-        if (entry && entry[1].categoria === categoria) {
-          hayCategoria = true;
-          ultimoMsgCategoria = msg;
-        }
-      }
-
-      let content;
-      if (!hayCategoria) {
-        content = `# ${ROLES_CARNETS[categoria]}\n<<@${usuario.id}>`;
-      } else {
-        content = `<<@${usuario.id}>`;
-      }
-
-      let msg;
-      if (ultimoMsgCategoria) {
-        msg = await ultimoMsgCategoria.reply({
-          content: content,
-          files: [imagen.url],
-          allowedMentions: { parse: [] }
-        });
-      } else {
-        msg = await canal.send({
-          content: content,
-          files: [imagen.url],
-          allowedMentions: { parse: [] }
+      // Buscar matrícula del usuario
+      const existente = Object.entries(data[ala]).find(([n, info]) => info.userId === usuario.id);
+      if (!existente) {
+        return interaction.editReply({ 
+          content: `❌ <@${usuario.id}> no tiene matrícula en ${ala === 'ala1' ? 'Ala 1' : 'Ala 2'}.`, 
+          flags: MessageFlags.Ephemeral 
         });
       }
 
-      data[usuario.id] = {
-        categoria,
-        categoriaNombre: ROLES_CARNETS[categoria],
-        rangoId: rangoId,
-        imagen: imagen.url,
-        mensajeId: msg.id,
-        fecha: new Date().toISOString()
-      };
+      delete data[ala][existente[0]];
       saveData(data);
 
-      const rangoNombre = rangoId ? RANGO_NOMBRES[rangoId] : 'Sin rango';
+      const canal = await client.channels.fetch(CANAL_MATRICULAS);
+      await actualizarMensajeMatriculas(canal, interaction.guild, data);
 
       return interaction.editReply({ 
-        content: `✅ Carnet agregado para <@${usuario.id}>.\n🎖️ Rango: **${rangoNombre}**`, 
+        content: `✅ Matrícula LAV-${existente[0]} quitada a <@${usuario.id}>.\n📋 Lista actualizada.`, 
         flags: MessageFlags.Ephemeral 
       });
     }
 
-    // ===== /BAJA =====
-    if (interaction.commandName === 'baja') {
+    // ===== /CAMBIARMATRICULA =====
+    if (interaction.commandName === 'cambiarmatricula') {
       if (!interaction.member.roles.cache.some(r => ROLES_ADMIN.includes(r.id))) {
         return safeReply(interaction, { content: '❌ Acceso denegado.', flags: MessageFlags.Ephemeral });
       }
 
       const usuario = interaction.options.getUser('usuario');
+      const nuevoNumero = interaction.options.getString('nuevo_numero').padStart(2, '0');
+      const ala = interaction.options.getString('ala');
 
-      if (!usuario) {
-        return safeReply(interaction, { content: '❌ Debes especificar un usuario.', flags: MessageFlags.Ephemeral });
-      }
-
-      if (!data[usuario.id]) {
-        return safeReply(interaction, { content: '❌ Este usuario no tiene carnet registrado.', flags: MessageFlags.Ephemeral });
+      const numInt = parseInt(nuevoNumero);
+      if (isNaN(numInt) || numInt < 1 || numInt > 33) {
+        return safeReply(interaction, { content: '❌ Número debe ser entre 01 y 33.', flags: MessageFlags.Ephemeral });
       }
 
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-      const canal = await client.channels.fetch(CANAL_CARNETS);
 
-      try {
-        const msgOld = await canal.messages.fetch(data[usuario.id].mensajeId);
-        await msgOld.delete();
-      } catch (e) {
-        console.log('No se pudo borrar mensaje:', e.message);
+      // Verificar si nuevo número está ocupado
+      if (data[ala][nuevoNumero]) {
+        return interaction.editReply({ 
+          content: `❌ El número ${nuevoNumero} ya está ocupado por <@${data[ala][nuevoNumero].userId}>.`, 
+          flags: MessageFlags.Ephemeral 
+        });
       }
 
-      delete data[usuario.id];
+      // Buscar matrícula actual
+      const existente = Object.entries(data[ala]).find(([n, info]) => info.userId === usuario.id);
+      if (!existente) {
+        return interaction.editReply({ 
+          content: `❌ <@${usuario.id}> no tiene matrícula en ${ala === 'ala1' ? 'Ala 1' : 'Ala 2'}.`, 
+          flags: MessageFlags.Ephemeral 
+        });
+      }
+
+      const numeroAnterior = existente[0];
+
+      // Cambiar
+      delete data[ala][numeroAnterior];
+      data[ala][nuevoNumero] = {
+        userId: usuario.id,
+        fecha: new Date().toISOString()
+      };
       saveData(data);
 
+      const canal = await client.channels.fetch(CANAL_MATRICULAS);
+      await actualizarMensajeMatriculas(canal, interaction.guild, data);
+
       return interaction.editReply({ 
-        content: `✅ Carnet de <@${usuario.id}> eliminado. Usa \`/organizar\` si necesitas reordenar.`, 
+        content: `✅ Matrícula cambiada de LAV-${numeroAnterior} a **LAV-${nuevoNumero}** para <@${usuario.id}>.\n📋 Lista actualizada.`, 
         flags: MessageFlags.Ephemeral 
       });
     }
 
-    // ===== /ORGANIZAR =====
-    if (interaction.commandName === 'organizar') {
-      if (!interaction.member.roles.cache.some(r => ROLES_ADMIN.includes(r.id))) {
-        return safeReply(interaction, { content: '❌ Acceso denegado.', flags: MessageFlags.Ephemeral });
+    // ===== /LISTAMATRICULAS =====
+    if (interaction.commandName === 'listamatriculas') {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      
+      const canal = await client.channels.fetch(CANAL_MATRICULAS);
+      const mensajes = await canal.messages.fetch({ limit: 20 });
+      
+      let msgLista = null;
+      for (const [msgId, msg] of mensajes) {
+        if (msg.author.id === CLIENT_ID && msg.content.includes('Lista de callsigns')) {
+          msgLista = msg;
+          break;
+        }
       }
 
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-      const canal = await client.channels.fetch(CANAL_CARNETS);
+      if (msgLista) {
+        return interaction.editReply({ 
+          content: `📋 Lista de matrículas: ${msgLista.url}`, 
+          flags: MessageFlags.Ephemeral 
+        });
+      } else {
+        return interaction.editReply({ 
+          content: '❌ No se encontró la lista. Usa `/matricula` para crearla.', 
+          flags: MessageFlags.Ephemeral 
+        });
+      }
+    }
 
-      const mensajes = await canal.messages.fetch({ limit: 100 });
-      const msgsArray = Array.from(mensajes.values()).reverse();
+    // ===== /MIMATRICULA =====
+    if (interaction.commandName === 'mimatricula') {
+      let encontrado = null;
+      let alaEncontrada = '';
       
-      const carnets = [];
-      for (const msg of msgsArray) {
-        if (msg.attachments.size === 0) continue;
-        const entry = Object.entries(data).find(([uid, info]) => info.mensajeId === msg.id);
+      for (const ala of ['ala1', 'ala2']) {
+        const entry = Object.entries(data[ala]).find(([n, info]) => info.userId === userId);
         if (entry) {
-          const [uid, info] = entry;
-          const member = await canal.guild.members.fetch(uid).catch(() => null);
-          const rangoActual = obtenerRangoUsuario(member) || info.rangoId;
-          
-          carnets.push({
-            userId: uid,
-            ...info,
-            rangoId: rangoActual,
-            msg: msg
-          });
+          encontrado = entry;
+          alaEncontrada = ala;
+          break;
         }
       }
 
-      console.log(`Organizando ${carnets.length} carnets...`);
-
-      for (const c of carnets) {
-        try {
-          await c.msg.delete();
-          console.log(`Borrado: ${c.userId}`);
-        } catch (e) {
-          console.error(`Error borrando ${c.userId}:`, e.message);
-        }
+      if (!encontrado) {
+        return safeReply(interaction, { content: '❌ No tienes matrícula asignada.', flags: MessageFlags.Ephemeral });
       }
 
-      const porCategoria = {};
-      CATEGORIA_ORDEN.forEach(cat => porCategoria[cat] = []);
-      
-      for (const c of carnets) {
-        if (porCategoria[c.categoria]) {
-          porCategoria[c.categoria].push(c);
-        }
-      }
+      const member = await interaction.guild.members.fetch(userId).catch(() => null);
+      const rangoId = obtenerRangoUsuario(member);
+      const rangoTexto = rangoId ? `<@&${rangoId}>` : 'Sin rango';
 
-      const nuevoData = {};
-      
-      for (const catId of CATEGORIA_ORDEN) {
-        const lista = porCategoria[catId];
-        if (lista.length === 0) continue;
-
-        // ORDENAR: LTC → MAJ → CPT → FLT → SLT → WO-02 → WO-01 → MS → GS → SS → SGT → CPL → LCPL → PFC → PVT
-        lista.sort((a, b) => obtenerPosicionRango(a.rangoId) - obtenerPosicionRango(b.rangoId));
-
-        let primera = true;
-        for (const c of lista) {
-          let content;
-          if (primera) {
-            content = `# ${ROLES_CARNETS[catId]}\n<<@${c.userId}>`;
-            primera = false;
-          } else {
-            content = `<<@${c.userId}>`;
-          }
-
-          try {
-            const nuevoMsg = await canal.send({
-              content: content,
-              files: [c.imagen],
-              allowedMentions: { parse: [] }
-            });
-            
-            nuevoData[c.userId] = {
-              categoria: c.categoria,
-              categoriaNombre: c.categoriaNombre,
-              rangoId: c.rangoId,
-              imagen: c.imagen,
-              mensajeId: nuevoMsg.id,
-              fecha: c.fecha
-            };
-            const rangoNombre = c.rangoId ? RANGO_NOMBRES[c.rangoId] : 'Sin rango';
-            console.log(`✅ Reenviado: ${c.userId} (${rangoNombre})`);
-          } catch (e) {
-            console.error(`❌ Error reenviando ${c.userId}:`, e.message);
-          }
-        }
-      }
-
-      for (const [uid, info] of Object.entries(nuevoData)) {
-        data[uid] = info;
-      }
-      for (const uid of Object.keys(data)) {
-        if (!nuevoData[uid]) delete data[uid];
-      }
-      saveData(data);
-
-      return interaction.editReply({ 
-        content: `✅ Canal organizado. ${Object.keys(nuevoData).length} carnets ordenados por rango (LTC → PVT).`, 
-        flags: MessageFlags.Ephemeral 
-      });
-    }
-
-    // ===== /MYCARNET =====
-    if (interaction.commandName === 'mycarnet') {
-      if (!data[userId]) {
-        return safeReply(interaction, { content: '❌ No tienes carnet registrado.', flags: MessageFlags.Ephemeral });
-      }
-      const carnet = data[userId];
-      const rangoNombre = carnet.rangoId ? RANGO_NOMBRES[carnet.rangoId] : 'Sin rango';
-      
       return safeReply(interaction, { 
-        content: `**Categoría:** ${carnet.categoriaNombre}\n**Rango:** ${rangoNombre}\n**Fecha:** ${new Date(carnet.fecha).toLocaleDateString()}\n${carnet.imagen}`, 
+        content: `🎖️ Tu matrícula: **LAV-${encontrado[0]}** (${alaEncontrada === 'ala1' ? 'Ala 1' : 'Ala 2'})\n${rangoTexto}\n📅 Asignada: ${new Date(encontrado[1].fecha).toLocaleDateString()}`, 
         flags: MessageFlags.Ephemeral 
       });
     }
